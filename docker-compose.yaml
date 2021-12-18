@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:latest
+    restart: always
+    ports:
+      - "5432:5432"
+    networks:
+      - mynet
+    environment:
+      - POSTGRES_PASSWORD=testpassword
+  flyway:
+    image: flyway/flyway
+    command: -url=jdbc:postgresql://postgres:5432/postgres -user=postgres -password=testpassword migrate
+    volumes:
+      - roach:/var/lib/postgresql/data
+      - ./flyway/sql:/flyway/sql
+    depends_on:
+      - postgres
+    networks:
+      - mynet
+
+volumes:
+  roach:
+
+networks:
+  mynet:
+    driver: bridge
