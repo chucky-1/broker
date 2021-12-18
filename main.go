@@ -4,10 +4,10 @@ import (
 	"github.com/caarlos0/env/v6"
 	"github.com/chucky-1/broker/internal/config"
 	"github.com/jackc/pgx/v4"
+	log "github.com/sirupsen/logrus"
 
 	"context"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 )
 
 func main() {
