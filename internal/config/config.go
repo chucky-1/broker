@@ -9,8 +9,9 @@ type Config struct {
 	PortPostgres     string `env:"POSTGRES_USER" envDefault:"5432"`
 	DBNamePostgres   string `env:"POSTGRES_DB" envDefault:"postgres"`
 
-	HostRedis string `env:"HOST" envDefault:"localhost"`
-	PortRedis string `env:"PORT" envDefault:"6379"`
+	ServerRedisCache string `env:"SERVER" envDefault:"server1"`
+	HostRedisCache   string `env:"HOST" envDefault:"localhost"`
+	PortRedisCache   string `env:"PORT" envDefault:"6379"`
 
 	HostGrpc string `env:"HOST_GRPC" envDefault:"localhost"`
 	PortGrpc string `env:"PORT_GRPC" envDefault:"10000"`
