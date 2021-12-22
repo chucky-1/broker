@@ -13,6 +13,9 @@ type Config struct {
 	HostRedisCache   string `env:"HOST" envDefault:"localhost"`
 	PortRedisCache   string `env:"PORT" envDefault:"6379"`
 
-	HostGrpc string `env:"HOST_GRPC" envDefault:"localhost"`
-	PortGrpc string `env:"PORT_GRPC" envDefault:"10000"`
+	HostGrpcClient string `env:"HOST_GRPC" envDefault:"localhost"`
+	PortGrpcClient string `env:"PORT_GRPC" envDefault:"10000"`
+
+	HostGrpcServer string `env:"HOST_GRPC_SERVER" envDefault:"localhost"`
+	PortGrpcServer string `env:"PORT_GRPC_SERVER" envDefault:"11000"`
 }

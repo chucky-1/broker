@@ -1,11 +1,5 @@
 package model
 
-// Client is struct of client
-type Client struct {
-	ID      int
-	balance float32
-}
-
 // Stock contains fields that describe the shares of companies
 type Stock struct {
 	ID     int32   `validate:"required"`

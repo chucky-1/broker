@@ -8,6 +8,10 @@ service Prices {
   rpc SubAll(Request) returns (stream Stock) {}
 }
 
+service Swops {
+  rpc Swop (stream Application) returns (stream Response) {}
+}
+
 message Stock {
   int32 id = 1;
   string title = 2;
@@ -16,3 +20,17 @@ message Stock {
 }
 
 message Request {}
+
+message Application {
+  string act = 1;
+  int32 stock_id = 2;
+  int32 swop_id = 3;
+  int32 count = 4;
+}
+
+message Response {
+  string act = 1;
+  string message = 2;
+  float balance = 3;
+  int32 swop_id = 4;
+}

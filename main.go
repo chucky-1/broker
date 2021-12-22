@@ -1,10 +1,9 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"github.com/caarlos0/env/v6"
 	"github.com/chucky-1/broker/internal/config"
+	"github.com/chucky-1/broker/internal/grpc/server"
 	"github.com/chucky-1/broker/internal/model"
 	"github.com/chucky-1/broker/internal/repository"
 	"github.com/chucky-1/broker/protocol"
@@ -13,6 +12,10 @@ import (
 	"github.com/jackc/pgx/v4"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+
+	"context"
+	"fmt"
+	"net"
 )
 
 func main() {
@@ -43,11 +46,11 @@ func main() {
 
 	cch := repository.NewCache(c)
 	rep := repository.NewRepository(conn, cch)
-	fmt.Println(rep)
 
-	// Grpc
-	go func() {
-		hostAndPort = fmt.Sprint(cfg.HostGrpc, ":", cfg.PortGrpc)
+	// Grpc client
+	ch := make(chan *protocol.Stock)
+	go func(ch chan *protocol.Stock) {
+		hostAndPort = fmt.Sprint(cfg.HostGrpcClient, ":", cfg.PortGrpcClient)
 		clientConn, err := grpc.Dial(hostAndPort, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
@@ -63,6 +66,7 @@ func main() {
 		if err != nil {
 			return
 		}
+
 		for {
 			select {
 			case <- stream.Context().Done():
@@ -70,7 +74,7 @@ func main() {
 			default:
 				st, err := stream.Recv()
 				if err != nil {
-					log.Error(err)
+					return
 				}
 				err = cch.Set(&model.Stock{
 					ID:     st.Id,
@@ -80,11 +84,30 @@ func main() {
 				})
 				if err != nil {
 					log.Error(err)
+				} else {
+					ch <-st
 				}
 			}
 		}
+	}(ch)
+
+	// Grpc server
+	go func() {
+		hostAndPort = fmt.Sprint(cfg.HostGrpcServer, ":", cfg.PortGrpcServer)
+		lis, err := net.Listen("tcp", hostAndPort)
+		if err != nil {
+			log.Fatalf("failed to listen: %v", err)
+		}
+		s := grpc.NewServer()
+		protocol.RegisterSwopsServer(s, server.NewServer(rep))
+		log.Infof("server listening at %v", lis.Addr())
+		if err = s.Serve(lis); err != nil {
+			log.Fatalf("failed to serve: %v", err)
+		}
 	}()
 
-	chn := make(chan string)
-	<- chn
+	for {
+		stock := <-ch
+		log.Info(stock)
+	}
 }
