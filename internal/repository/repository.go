@@ -1,14 +1,15 @@
-// Package repository stores positions in the database
+// Package repository stores positions in the database and in cache
 package repository
 
 import (
+	"github.com/chucky-1/broker/internal/model"
 	"github.com/jackc/pgx/v4"
 	log "github.com/sirupsen/logrus"
-	"strconv"
 
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -150,6 +151,51 @@ func (r *Repository) GetInfo(swopID int32) (int32, int32, error) {
 		return 0, 0, err
 	}
 	return stockID, count, nil
+}
+
+// GetOpenSwops returns all open positions
+func (r *Repository) GetOpenSwops(grpcID string) ([]*model.Swop, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	var count int32
+	r.conn.QueryRow(ctx, "SELECT count(*) FROM swops WHERE grpc_id = $1 AND price_close is NULL").Scan(&count)
+
+	rows, err := r.conn.Query(ctx, "SELECT id, stock_id, count FROM swops WHERE grpc_id = $1 AND price_close is NULL", grpcID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var swop model.Swop
+	swops := make([]*model.Swop, count)
+	for rows.Next() {
+		err = rows.Scan(&swop.ID, &swop.StockID, &swop.Count)
+		if err != nil {
+			return nil, err
+		}
+		swops = append(swops, &swop)
+	}
+	return swops, nil
+}
+
+// GetBalanceRealTime returns the total value of the stocks, slice with detailed information and error
+func (r *Repository) GetBalanceRealTime(swops []*model.Swop) (float32, []*model.Detail, error) {
+	details := make([]*model.Detail, 0, len(swops))
+	var sum float32
+	for _, swop := range swops {
+		stock, err := r.cache.Get(strconv.Itoa(int(swop.StockID)))
+		if err != nil {
+			return 0, nil, err
+		}
+		detail := model.Detail{
+			Stock: stock,
+			Count: swop.Count,
+		}
+		details = append(details, &detail)
+		sum += stock.Price * float32(swop.Count)
+	}
+	return sum, details, nil
 }
 
 func (r *Repository) changeBalance(grpcID string, sum float32) error {

@@ -28,9 +28,16 @@ message Application {
   int32 count = 4;
 }
 
+message Detail {
+  Stock stock = 1;
+  int32 count = 2;
+}
+
 message Response {
   string act = 1;
   string message = 2;
   float balance = 3;
   int32 swop_id = 4;
+  float balance_real_time = 5;
+  repeated Detail details = 6;
 }
