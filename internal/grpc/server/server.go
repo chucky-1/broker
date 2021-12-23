@@ -2,6 +2,7 @@
 package server
 
 import (
+	"fmt"
 	"github.com/chucky-1/broker/internal/repository"
 	"github.com/chucky-1/broker/protocol"
 	"github.com/google/uuid"
@@ -125,6 +126,26 @@ func (s *Server) Position(stream protocol.Positions_PositionServer) error {
 			case recv.Act == "OPEN":
 				positionID, err := s.rep.Open(grpcID, recv.StockId, recv.Count)
 				if err != nil {
+					if err.Error() == fmt.Sprintf("stock with id %d didn't find", recv.StockId) {
+						errSend := stream.Send(&protocol.Response{
+							Act: "OPEN",
+							Message: err.Error(),
+						})
+						if errSend != nil {
+							log.Error(errSend)
+						}
+						continue
+					}
+					if err.Error() == "not enough money" {
+						errSend := stream.Send(&protocol.Response{
+							Act: "OPEN",
+							Message: err.Error(),
+						})
+						if errSend != nil {
+							log.Error(errSend)
+						}
+						continue
+					}
 					log.Error(err)
 					errSend := stream.Send(&protocol.Response{
 						Act: "OPEN",
@@ -146,6 +167,17 @@ func (s *Server) Position(stream protocol.Positions_PositionServer) error {
 			case recv.Act == "CLOSE":
 				err = s.rep.Close(grpcID, recv.PositionId)
 				if err != nil {
+					if err.Error() == fmt.Sprintf("you did not open a position with id %d", recv.PositionId) {
+						errSend := stream.Send(&protocol.Response{
+							Act:     "CLOSE",
+							Message: err.Error(),
+							PositionId:  recv.PositionId,
+						})
+						if errSend != nil {
+							log.Error(errSend)
+						}
+						continue
+					}
 					log.Error(err)
 					errSend := stream.Send(&protocol.Response{
 						Act:     "CLOSE",

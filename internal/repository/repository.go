@@ -93,9 +93,13 @@ func (r *Repository) Open(grpcID string, stockID, count int32) (int, error) {
 
 // Close func closes position and returns income or loss
 func (r *Repository) Close(grpcID string, positionID int32) error {
-	stockID, count, err := r.getInfo(positionID)
+	g, stockID, count, err := r.getInfo(positionID)
 	if err != nil {
 		return err
+	}
+
+	if g != grpcID {
+		return fmt.Errorf("you did not open a position with id %d", positionID)
 	}
 
 	stcID := strconv.Itoa(int(stockID))
@@ -141,16 +145,17 @@ func (r *Repository) GetBalance(grpcID string) (float32, error) {
 	return balance, nil
 }
 
-// getInfo returns id of stock, count of stock
-func (r *Repository) getInfo(positionID int32) (int32, int32, error) {
+// getInfo returns id of grpc, id of stock, count of stock
+func (r *Repository) getInfo(positionID int32) (string, int32, int32, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	var stockID, count int32
-	err := r.conn.QueryRow(ctx, "SELECT stock_id, count FROM positions WHERE id = $1", positionID).Scan(&stockID, &count)
+	var grpcID string
+	err := r.conn.QueryRow(ctx, "SELECT grpc_id, stock_id, count FROM positions WHERE id = $1", positionID).Scan(&grpcID, &stockID, &count)
 	if err != nil {
-		return 0, 0, err
+		return "", 0, 0, err
 	}
-	return stockID, count, nil
+	return grpcID, stockID, count, nil
 }
 
 // GetOpenPositions returns all open positions
@@ -167,9 +172,9 @@ func (r *Repository) GetOpenPositions(grpcID string) ([]*model.Position, error) 
 	}
 	defer rows.Close()
 
-	var position model.Position
 	positions := make([]*model.Position, count)
 	for rows.Next() {
+		position := model.Position{}
 		err = rows.Scan(&position.ID, &position.StockID, &position.Count)
 		if err != nil {
 			return nil, err

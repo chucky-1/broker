@@ -95,9 +95,6 @@ func main() {
 					log.Error(err)
 					continue
 				}
-				if srv.GetNum() > 0 {
-					chn <- st
-				}
 				err = cch.Set(&model.Stock{
 					ID:     st.Id,
 					Title:  st.Title,
@@ -108,6 +105,9 @@ func main() {
 					log.Error(err)
 				} else {
 					ch <- st
+					if srv.GetNum() > 0 {
+						chn <- st
+					}
 				}
 			}
 		}
