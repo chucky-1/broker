@@ -93,7 +93,7 @@ func (r *Repository) Open(grpcID string, stockID, count int32) (int, error) {
 
 // Close func closes position and returns income or loss
 func (r *Repository) Close(grpcID string, positionID int32) error {
-	stockID, count, err := r.GetInfo(positionID)
+	stockID, count, err := r.getInfo(positionID)
 	if err != nil {
 		return err
 	}
@@ -141,8 +141,8 @@ func (r *Repository) GetBalance(grpcID string) (float32, error) {
 	return balance, nil
 }
 
-// GetInfo returns id of stock and count of stock
-func (r *Repository) GetInfo(positionID int32) (int32, int32, error) {
+// getInfo returns id of stock, count of stock
+func (r *Repository) getInfo(positionID int32) (int32, int32, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	var stockID, count int32
