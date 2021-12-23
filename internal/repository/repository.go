@@ -18,11 +18,11 @@ const startBalance = 1000
 // Repository works with postgres
 type Repository struct {
 	conn  *pgx.Conn
-	cache *Cache
+	cache Cache
 }
 
 // NewRepository is constructor
-func NewRepository(conn *pgx.Conn, cache *Cache) *Repository {
+func NewRepository(conn *pgx.Conn, cache Cache) *Repository {
 	return &Repository{conn: conn, cache: cache}
 }
 

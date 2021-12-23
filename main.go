@@ -7,8 +7,6 @@ import (
 	"github.com/chucky-1/broker/internal/model"
 	"github.com/chucky-1/broker/internal/repository"
 	"github.com/chucky-1/broker/protocol"
-	"github.com/go-redis/cache/v8"
-	"github.com/go-redis/redis/v8"
 	"github.com/jackc/pgx/v4"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -39,12 +37,12 @@ func main() {
 		}
 	}(conn, context.Background())
 
-	// Redis cache
-	hostAndPort := fmt.Sprint(cfg.HostRedisCache, ":", cfg.PortRedisCache)
-	ring := redis.NewRing(&redis.RingOptions{Addrs: map[string]string{cfg.ServerRedisCache: hostAndPort}})
-	c := cache.New(&cache.Options{Redis: ring})
+	//// Redis cache
+	//hostAndPort := fmt.Sprint(cfg.HostRedisCache, ":", cfg.PortRedisCache)
+	//ring := redis.NewRing(&redis.RingOptions{Addrs: map[string]string{cfg.ServerRedisCache: hostAndPort}})
+	//c := cache.New(&cache.Options{Redis: ring})
 
-	cch := repository.NewCache(c)
+	var cch repository.Cache = repository.NewLocalMap()
 	rep := repository.NewRepository(conn, cch)
 
 	chn := make(chan *protocol.Stock) // this chan is listened in server.go
@@ -52,7 +50,7 @@ func main() {
 	// Grpc Positions
 	var srv *server.Server
 	go func() {
-		hostAndPort = fmt.Sprint(cfg.HostGrpcServer, ":", cfg.PortGrpcServer)
+		hostAndPort := fmt.Sprint(cfg.HostGrpcServer, ":", cfg.PortGrpcServer)
 		lis, err := net.Listen("tcp", hostAndPort)
 		if err != nil {
 			log.Fatalf("failed to listen: %v", err)
@@ -70,7 +68,7 @@ func main() {
 
 	// Grpc Prices
 	go func() {
-		hostAndPort = fmt.Sprint(cfg.HostGrpcClient, ":", cfg.PortGrpcClient)
+		hostAndPort := fmt.Sprint(cfg.HostGrpcClient, ":", cfg.PortGrpcClient)
 		clientConn, err := grpc.Dial(hostAndPort, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
