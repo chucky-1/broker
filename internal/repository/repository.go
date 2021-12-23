@@ -40,7 +40,7 @@ func (r *Repository) CreateUser(grpcID string) error {
 	return nil
 }
 
-// Open func opens position. Returns id of swop, error
+// Open func opens position. Returns id of position, error
 func (r *Repository) Open(grpcID string, stockID, count int32) (int, error) {
 	stcID := strconv.Itoa(int(stockID))
 	stock, err := r.cache.Get(stcID)
@@ -69,8 +69,8 @@ func (r *Repository) Open(grpcID string, stockID, count int32) (int, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	rows, err := r.conn.Query(ctx, "INSERT INTO swops (id, grpc_id, stock_id, price_open, count, time_open, price_close, time_close)" +
-		"VALUES (nextval('swops_sequence'), $1, $2, $3, $4, $5, NULL, NULL) RETURNING id;",
+	rows, err := r.conn.Query(ctx, "INSERT INTO positions (id, grpc_id, stock_id, price_open, count, time_open, price_close, time_close)" +
+		"VALUES (nextval('positions_sequence'), $1, $2, $3, $4, $5, NULL, NULL) RETURNING id;",
 		grpcID, stock.ID, stock.Price, count, t)
 	if err != nil {
 		r.returnBalance(grpcID, currentBalance)
@@ -92,8 +92,8 @@ func (r *Repository) Open(grpcID string, stockID, count int32) (int, error) {
 }
 
 // Close func closes position and returns income or loss
-func (r *Repository) Close(grpcID string, swopID int32) error {
-	stockID, count, err := r.GetInfo(swopID)
+func (r *Repository) Close(grpcID string, positionID int32) error {
+	stockID, count, err := r.GetInfo(positionID)
 	if err != nil {
 		return err
 	}
@@ -116,8 +116,8 @@ func (r *Repository) Close(grpcID string, swopID int32) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	commandTag, err := r.conn.Exec(ctx, "UPDATE swops SET price_close = $1, time_close = CURRENT_TIMESTAMP " +
-		"WHERE id = $2", stock.Price, swopID)
+	commandTag, err := r.conn.Exec(ctx, "UPDATE positions SET price_close = $1, time_close = CURRENT_TIMESTAMP " +
+		"WHERE id = $2", stock.Price, positionID)
 	if err != nil {
 		r.returnBalance(grpcID, currentBalance)
 		return err
@@ -142,58 +142,58 @@ func (r *Repository) GetBalance(grpcID string) (float32, error) {
 }
 
 // GetInfo returns id of stock and count of stock
-func (r *Repository) GetInfo(swopID int32) (int32, int32, error) {
+func (r *Repository) GetInfo(positionID int32) (int32, int32, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	var stockID, count int32
-	err := r.conn.QueryRow(ctx, "SELECT stock_id, count FROM swops WHERE id = $1", swopID).Scan(&stockID, &count)
+	err := r.conn.QueryRow(ctx, "SELECT stock_id, count FROM positions WHERE id = $1", positionID).Scan(&stockID, &count)
 	if err != nil {
 		return 0, 0, err
 	}
 	return stockID, count, nil
 }
 
-// GetOpenSwops returns all open positions
-func (r *Repository) GetOpenSwops(grpcID string) ([]*model.Swop, error) {
+// GetOpenPositions returns all open positions
+func (r *Repository) GetOpenPositions(grpcID string) ([]*model.Position, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	var count int32
-	r.conn.QueryRow(ctx, "SELECT count(*) FROM swops WHERE grpc_id = $1 AND price_close is NULL").Scan(&count)
+	r.conn.QueryRow(ctx, "SELECT count(*) FROM positions WHERE grpc_id = $1 AND price_close is NULL").Scan(&count)
 
-	rows, err := r.conn.Query(ctx, "SELECT id, stock_id, count FROM swops WHERE grpc_id = $1 AND price_close is NULL", grpcID)
+	rows, err := r.conn.Query(ctx, "SELECT id, stock_id, count FROM positions WHERE grpc_id = $1 AND price_close is NULL", grpcID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var swop model.Swop
-	swops := make([]*model.Swop, count)
+	var position model.Position
+	positions := make([]*model.Position, count)
 	for rows.Next() {
-		err = rows.Scan(&swop.ID, &swop.StockID, &swop.Count)
+		err = rows.Scan(&position.ID, &position.StockID, &position.Count)
 		if err != nil {
 			return nil, err
 		}
-		swops = append(swops, &swop)
+		positions = append(positions, &position)
 	}
-	return swops, nil
+	return positions, nil
 }
 
 // GetBalanceRealTime returns the total value of the stocks, slice with detailed information and error
-func (r *Repository) GetBalanceRealTime(swops []*model.Swop) (float32, []*model.Detail, error) {
-	details := make([]*model.Detail, 0, len(swops))
+func (r *Repository) GetBalanceRealTime(positions []*model.Position) (float32, []*model.Detail, error) {
+	details := make([]*model.Detail, 0, len(positions))
 	var sum float32
-	for _, swop := range swops {
-		stock, err := r.cache.Get(strconv.Itoa(int(swop.StockID)))
+	for _, position := range positions {
+		stock, err := r.cache.Get(strconv.Itoa(int(position.StockID)))
 		if err != nil {
 			return 0, nil, err
 		}
 		detail := model.Detail{
 			Stock: stock,
-			Count: swop.Count,
+			Count: position.Count,
 		}
 		details = append(details, &detail)
-		sum += stock.Price * float32(swop.Count)
+		sum += stock.Price * float32(position.Count)
 	}
 	return sum, details, nil
 }

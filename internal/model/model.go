@@ -11,8 +11,8 @@ type Stock struct {
 	Update string  `validate:"required"`
 }
 
-// Swop is model of position
-type Swop struct {
+// Position is model of position
+type Position struct {
 	ID         int32
 	GrpcID     string
 	StockID    int32
@@ -23,7 +23,7 @@ type Swop struct {
 	TimeClose  time.Time
 }
 
-// Detail contains detailed information about swop
+// Detail contains detailed information about position
 type Detail struct {
 	Stock *Stock
 	Count int32

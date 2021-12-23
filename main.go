@@ -49,7 +49,7 @@ func main() {
 
 	chn := make(chan *protocol.Stock) // this chan is listened in server.go
 
-	// Grpc Swops
+	// Grpc Positions
 	var srv *server.Server
 	go func() {
 		hostAndPort = fmt.Sprint(cfg.HostGrpcServer, ":", cfg.PortGrpcServer)
@@ -59,7 +59,7 @@ func main() {
 		}
 		s := grpc.NewServer()
 		srv = server.NewServer(rep, chn)
-		protocol.RegisterSwopsServer(s, srv)
+		protocol.RegisterPositionsServer(s, srv)
 		log.Infof("server listening at %v", lis.Addr())
 		if err = s.Serve(lis); err != nil {
 			log.Fatalf("failed to serve: %v", err)

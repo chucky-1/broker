@@ -3,7 +3,7 @@ CREATE TABLE users (
     balance numeric
 );
 
-CREATE TABLE swops (
+CREATE TABLE positions (
     id SERIAL PRIMARY KEY,
     grpc_id varchar(36) REFERENCES users(grpc_id) NOT NULL,
     stock_id integer NOT NULL,
@@ -14,4 +14,4 @@ CREATE TABLE swops (
     time_close timestamp
 );
 
-CREATE SEQUENCE swops_sequence;
+CREATE SEQUENCE positions_sequence;

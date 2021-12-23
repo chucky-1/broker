@@ -12,7 +12,7 @@ import (
 
 // Server contains methods of application on service side of grpc
 type Server struct {
-	protocol.UnimplementedSwopsServer
+	protocol.UnimplementedPositionsServer
 	rep *repository.Repository
 	ch  chan *protocol.Stock
 	mu  sync.RWMutex
@@ -24,8 +24,8 @@ func NewServer(rep *repository.Repository, ch chan *protocol.Stock) *Server {
 	return &Server{rep: rep, ch: ch, num: 0}
 }
 
-// Swop listens commands from client and does work
-func (s *Server) Swop(stream protocol.Swops_SwopServer) error {
+// Position listens commands from client and does work
+func (s *Server) Position(stream protocol.Positions_PositionServer) error {
 	s.mu.Lock()
 	s.num++
 	s.mu.Unlock()
@@ -59,8 +59,8 @@ func (s *Server) Swop(stream protocol.Swops_SwopServer) error {
 			s.mu.Unlock()
 			return stream.Context().Err()
 		case stock := <-s.ch:
-			swops, err := s.rep.GetOpenSwops(grpcID)
-			if len(swops) == 0 {
+			positions, err := s.rep.GetOpenPositions(grpcID)
+			if len(positions) == 0 {
 				continue
 			}
 			if err != nil {
@@ -74,11 +74,11 @@ func (s *Server) Swop(stream protocol.Swops_SwopServer) error {
 				}
 				continue
 			}
-			for _, swop := range swops {
-				if swop.StockID != stock.Id {
+			for _, position := range positions {
+				if position.StockID != stock.Id {
 					continue
 				}
-				value, details, err := s.rep.GetBalanceRealTime(swops)
+				value, details, err := s.rep.GetBalanceRealTime(positions)
 				if err != nil {
 					log.Error(err)
 					err = stream.Send(&protocol.Response{
@@ -123,7 +123,7 @@ func (s *Server) Swop(stream protocol.Swops_SwopServer) error {
 		case recv := <-internalChan:
 			switch {
 			case recv.Act == "OPEN":
-				swopID, err := s.rep.Open(grpcID, recv.StockId, recv.Count)
+				positionID, err := s.rep.Open(grpcID, recv.StockId, recv.Count)
 				if err != nil {
 					log.Error(err)
 					errSend := stream.Send(&protocol.Response{
@@ -137,20 +137,20 @@ func (s *Server) Swop(stream protocol.Swops_SwopServer) error {
 					err = stream.Send(&protocol.Response{
 						Act:     "OPEN",
 						Message: "Position successfully opened",
-						SwopId:  int32(swopID),
+						PositionId:  int32(positionID),
 					})
 					if err != nil {
 						log.Error(err)
 					}
 				}
 			case recv.Act == "CLOSE":
-				err = s.rep.Close(grpcID, recv.SwopId)
+				err = s.rep.Close(grpcID, recv.PositionId)
 				if err != nil {
 					log.Error(err)
 					errSend := stream.Send(&protocol.Response{
 						Act:     "CLOSE",
 						Message: "Position didn't close",
-						SwopId:  recv.SwopId,
+						PositionId:  recv.PositionId,
 					})
 					if errSend != nil {
 						log.Error(errSend)
@@ -159,7 +159,7 @@ func (s *Server) Swop(stream protocol.Swops_SwopServer) error {
 					err = stream.Send(&protocol.Response{
 						Act:     "CLOSE",
 						Message: "Position successfully closed",
-						SwopId:  recv.SwopId,
+						PositionId:  recv.PositionId,
 					})
 					if err != nil {
 						log.Error(err)
