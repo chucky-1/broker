@@ -22,10 +22,12 @@ message Stock {
 message Request {}
 
 message Application {
-  string act = 1;
-  int32 stock_id = 2;
-  int32 position_id = 3;
-  int32 count = 4;
+  int32 user_id = 1;
+  float deposit = 2;
+  string act = 3;
+  int32 stock_id = 4;
+  int32 position_id = 5;
+  int32 count = 6;
 }
 
 message Detail {

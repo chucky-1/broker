@@ -4,8 +4,8 @@ import (
 	"github.com/caarlos0/env/v6"
 	"github.com/chucky-1/broker/internal/config"
 	"github.com/chucky-1/broker/internal/grpc/server"
-	"github.com/chucky-1/broker/internal/model"
 	"github.com/chucky-1/broker/internal/repository"
+	"github.com/chucky-1/broker/internal/service"
 	"github.com/chucky-1/broker/protocol"
 	"github.com/jackc/pgx/v4"
 	log "github.com/sirupsen/logrus"
@@ -36,19 +36,27 @@ func main() {
 			log.Error(err)
 		}
 	}(conn, context.Background())
+	rep := repository.NewRepository(conn)
 
-	//// Redis cache
-	//hostAndPort := fmt.Sprint(cfg.HostRedisCache, ":", cfg.PortRedisCache)
-	//ring := redis.NewRing(&redis.RingOptions{Addrs: map[string]string{cfg.ServerRedisCache: hostAndPort}})
-	//c := cache.New(&cache.Options{Redis: ring})
-
-	var cch repository.Cache = repository.NewLocalMap()
-	rep := repository.NewRepository(conn, cch)
-
-	chn := make(chan *protocol.Stock) // this chan is listened in server.go
+	srvStore := make(map[int32]*service.Service) // map[srv.User.ID]*srv
+	chanUserID := make(chan int32)
+	chanDeposit := make(chan float32)
+	chanService := make(chan *service.Service)
+	go func() {
+		for {
+			userID := <-chanUserID
+			deposit := <-chanDeposit
+			srv, err := service.NewService(rep, userID, deposit)
+			if err != nil {
+				log.Error(err)
+			} else {
+				chanService <- srv
+				srvStore[srv.GetUser().ID] = srv
+			}
+		}
+	}()
 
 	// Grpc Positions
-	var srv *server.Server
 	go func() {
 		hostAndPort := fmt.Sprint(cfg.HostGrpcServer, ":", cfg.PortGrpcServer)
 		lis, err := net.Listen("tcp", hostAndPort)
@@ -56,8 +64,7 @@ func main() {
 			log.Fatalf("failed to listen: %v", err)
 		}
 		s := grpc.NewServer()
-		srv = server.NewServer(rep, chn)
-		protocol.RegisterPositionsServer(s, srv)
+		protocol.RegisterPositionsServer(s, server.NewServer(chanUserID, chanDeposit, chanService))
 		log.Infof("server listening at %v", lis.Addr())
 		if err = s.Serve(lis); err != nil {
 			log.Fatalf("failed to serve: %v", err)
@@ -90,25 +97,19 @@ func main() {
 			case <-stream.Context().Done():
 				return
 			default:
-				st, err := stream.Recv()
+				stock, err := stream.Recv()
 				if err != nil {
 					log.Error(err)
 					continue
 				}
-				err = cch.Set(&model.Stock{
-					ID:     st.Id,
-					Title:  st.Title,
-					Price:  st.Price,
-					Update: st.Update,
-				})
-				if err != nil {
-					log.Error(err)
-				} else {
-					ch <- st
-					if srv.GetNum() > 0 {
-						chn <- st
-					}
+				if len(srvStore) > 0 {
+					go func() {
+						for _, s := range srvStore {
+							s.GetChan() <- stock
+						}
+					}()
 				}
+				ch <- stock
 			}
 		}
 	}()

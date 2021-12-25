@@ -1,30 +1,24 @@
 // Package model has struct of essence
 package model
 
-import "time"
-
-// Stock contains fields that describe the shares of companies
-type Stock struct {
-	ID     int32   `validate:"required"`
-	Title  string  `validate:"required"`
-	Price  float32 `validate:"required,gt=0"`
-	Update string  `validate:"required"`
+// User is model of user
+type User struct {
+	ID      int32
+	Balance float32
 }
 
 // Position is model of position
 type Position struct {
 	ID         int32
-	GrpcID     string
+	UserID     int32
 	StockID    int32
-	PriceOpen  float32
+	StockTitle string
 	Count      int32
-	TimeOpen   time.Time
-	PriceClose float32
-	TimeClose  time.Time
+	PriceOpen  float32
 }
 
-// Detail contains detailed information about position
-type Detail struct {
-	Stock *Stock
-	Count int32
+// ClosePosition is struct
+type ClosePosition struct {
+	ID         int32
+	PriceClose float32
 }
