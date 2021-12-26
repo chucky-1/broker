@@ -4,6 +4,7 @@ package service
 import (
 	"github.com/chucky-1/broker/internal/model"
 	"github.com/chucky-1/broker/internal/repository"
+	"github.com/chucky-1/broker/internal/request"
 	"github.com/chucky-1/broker/protocol"
 	log "github.com/sirupsen/logrus"
 
@@ -21,27 +22,21 @@ type Service struct {
 	count     map[int32]int             // map[stock.ID]count. It is the total number of shares for different positions
 	stocks    map[int32]*protocol.Stock // map[stock.ID]*stock. Ih has the current stocks
 	ch        chan *protocol.Stock      // Current prices come here
+	chnPos    chan *request.Position
 }
 
 // NewService is constructor
-func NewService(rep *repository.Repository, userID int32, deposit float32) (*Service, error) {
+func NewService(rep *repository.Repository, userID int32, deposit float32, chnPos chan *request.Position) (*Service, error) {
 	s := Service{
 		rep:    rep,
 		count:  make(map[int32]int),
 		stocks: make(map[int32]*protocol.Stock),
 		ch:     make(chan *protocol.Stock),
+		chnPos: chnPos,
 	}
 	go func() {
 		for stock := range s.ch {
 			s.stocks[stock.Id] = stock
-			_, ok := s.count[stock.Id]
-			if !ok {
-				continue
-			}
-			for _, position := range s.positions {
-				pnl := s.pnl(position.ID)
-				log.Infof("User with id %d. His pnl for position %d is %f", position.UserID, position.ID, pnl)
-			}
 		}
 	}()
 
@@ -132,6 +127,14 @@ func (s *Service) Open(stockID, count int32) (int32, error) {
 	} else {
 		num++
 	}
+
+	s.chnPos <- &request.Position{
+		Act:        "OPEN",
+		PositionID: position.ID,
+		StockID:    position.StockID,
+		Count:      position.Count,
+		Price:      position.PriceOpen,
+	}
 	return position.ID, nil
 }
 
@@ -141,7 +144,7 @@ func (s *Service) Close(positionID int32) error {
 	if !ok {
 		return fmt.Errorf("you did not open a position with id %d", positionID)
 	}
-	position := model.ClosePosition{
+	position := request.ClosePosition{
 		ID:         positionID,
 		PriceClose: s.stocks[s.positions[positionID].StockID].Price,
 	}
@@ -169,6 +172,13 @@ func (s *Service) Close(positionID int32) error {
 		num--
 	}
 	delete(s.positions, positionID)
+	s.chnPos <- &request.Position{
+		Act:        "CLOSE",
+		PositionID: position.ID,
+		StockID:    stockID,
+		//Count:    s.positions[positionID].Count,
+		Price:      position.PriceClose,
+	}
 	return nil
 }
 

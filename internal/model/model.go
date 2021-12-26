@@ -16,9 +16,3 @@ type Position struct {
 	Count      int32
 	PriceOpen  float32
 }
-
-// ClosePosition is struct
-type ClosePosition struct {
-	ID         int32
-	PriceClose float32
-}

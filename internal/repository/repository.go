@@ -3,6 +3,7 @@ package repository
 
 import (
 	"github.com/chucky-1/broker/internal/model"
+	"github.com/chucky-1/broker/internal/request"
 	"github.com/jackc/pgx/v4"
 
 	"context"
@@ -68,7 +69,7 @@ func (r *Repository) Open(position *model.Position, t time.Time) (int32, error) 
 }
 
 // Close func closes position
-func (r *Repository) Close(position *model.ClosePosition) error {
+func (r *Repository) Close(position *request.ClosePosition) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	commandTag, err := r.conn.Exec(ctx, "UPDATE positions SET price_close = $1, time_close = CURRENT_TIMESTAMP " +
@@ -82,7 +83,7 @@ func (r *Repository) Close(position *model.ClosePosition) error {
 	return nil
 }
 
-// GetOpenPositions returns all open positions
+// GetOpenPositions returns all open positions for the certain user
 func (r *Repository) GetOpenPositions(userID int32) (map[int32]*model.Position, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -106,6 +107,28 @@ func (r *Repository) GetOpenPositions(userID int32) (map[int32]*model.Position, 
 			return nil, err
 		}
 		positions[position.ID] = &position
+	}
+	return positions, nil
+}
+
+// GetAllOpenPositions returns all open positions
+func (r *Repository) GetAllOpenPositions() (map[int32]*request.GetAllPositions, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	rows, err := r.conn.Query(ctx, "SELECT stock_id, id, count, price_open FROM positions WHERE price_close is NULL")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	positions := make(map[int32]*request.GetAllPositions)
+	for rows.Next() {
+		var position request.GetAllPositions
+		err = rows.Scan(&position.StockID, &position.PositionID, &position.Count, &position.PriceOpen)
+		if err != nil {
+			return nil, err
+		}
+		positions[position.PositionID] = &position
 	}
 	return positions, nil
 }

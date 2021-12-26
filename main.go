@@ -5,6 +5,7 @@ import (
 	"github.com/chucky-1/broker/internal/config"
 	"github.com/chucky-1/broker/internal/grpc/server"
 	"github.com/chucky-1/broker/internal/repository"
+	"github.com/chucky-1/broker/internal/request"
 	"github.com/chucky-1/broker/internal/service"
 	"github.com/chucky-1/broker/protocol"
 	"github.com/jackc/pgx/v4"
@@ -38,6 +39,13 @@ func main() {
 	}(conn, context.Background())
 	rep := repository.NewRepository(conn)
 
+	// Initializing dependencies
+	chPosition := make(chan *request.Position)
+	chStock := make(chan *protocol.Stock)
+	err = service.NewBot(rep, chPosition, chStock)
+	if err != nil {
+		log.Error(err)
+	}
 	srvStore := make(map[int32]*service.Service) // map[srv.User.ID]*srv
 	chanUserID := make(chan int32)
 	chanDeposit := make(chan float32)
@@ -46,7 +54,7 @@ func main() {
 		for {
 			userID := <-chanUserID
 			deposit := <-chanDeposit
-			srv, err := service.NewService(rep, userID, deposit)
+			srv, err := service.NewService(rep, userID, deposit, chPosition)
 			if err != nil {
 				log.Error(err)
 			} else {
@@ -109,7 +117,8 @@ func main() {
 						}
 					}()
 				}
-				ch <- stock
+				chStock <- stock
+				// ch <- stock
 			}
 		}
 	}()
