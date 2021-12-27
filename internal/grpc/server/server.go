@@ -22,7 +22,7 @@ type Server struct {
 }
 
 // NewServer is constructor
-func NewServer(chanBoxInfo chan *request.BoxInfo, chanService chan *service.Service, chanSrvDel chan string, chanSrvDel2 chan string) *Server {
+func NewServer(chanBoxInfo chan *request.BoxInfo, chanService chan *service.Service, chanSrvDel, chanSrvDel2 chan string) *Server {
 	return &Server{chanBoxInfo: chanBoxInfo, chanService: chanService, chanSrvDel: chanSrvDel, chanSrvDel2: chanSrvDel2}
 }
 

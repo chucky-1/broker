@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"github.com/caarlos0/env/v6"
 	"github.com/chucky-1/broker/internal/config"
 	"github.com/chucky-1/broker/internal/grpc/server"
@@ -13,6 +11,9 @@ import (
 	"github.com/jackc/pgx/v4"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+
+	"context"
+	"fmt"
 	"net"
 )
 
@@ -124,7 +125,7 @@ func main() {
 					}()
 				}
 				chStock <- stock
-				//ch <- stock
+				// ch <- stock
 			}
 		}
 	}()

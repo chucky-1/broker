@@ -40,6 +40,7 @@ func NewBot(rep *repository.Repository, chSrvAdd chan *Service, chSrvDel chan st
 			Act:        "INIT",
 			PositionID: position.PositionID,
 			StockID:    position.StockID,
+			UserID:     position.UserID,
 			Count:      position.Count,
 			Price:      position.PriceOpen,
 			StopLoss:   position.StopLoss,
@@ -89,9 +90,15 @@ func NewBot(rep *repository.Repository, chSrvAdd chan *Service, chSrvDel chan st
 					log.Infof("pnl for position ib %d is %f", position.PositionID, pnl)
 					switch {
 					case b.stopLoss(position, cStock):
-
+						err = b.close(position, cStock)
+						if err != nil {
+							log.Error(err)
+						}
 					case b.takeProfit(position, cStock):
-
+						err = b.close(position, cStock)
+						if err != nil {
+							log.Error(err)
+						}
 					}
 				}
 			}()
@@ -113,4 +120,33 @@ func (b *Bot) stopLoss(position *request.Position, stock *protocol.Stock) bool {
 
 func (b *Bot) takeProfit(position *request.Position, stock *protocol.Stock) bool {
 	return stock.Price >= position.TakeProfit
+}
+
+// close func closes a position after stop loss or take profit
+func (b *Bot) close(position *request.Position, stock *protocol.Stock) error {
+	for _, srv := range b.services {
+		if srv.user.ID == position.UserID {
+			err := srv.Close(position.PositionID)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+	err := b.rep.ChangeBalance(position.UserID, position.Price * float32(position.Count))
+	if err != nil {
+		return err
+	}
+	err = b.rep.Close(&request.ClosePosition{
+		ID:         position.PositionID,
+		PriceClose: stock.Price,
+	})
+	if err != nil {
+		errB := b.rep.ChangeBalance(position.UserID, -(position.Price * float32(position.Count)))
+		if errB != nil {
+			log.Error(err)
+		}
+		return err
+	}
+	return nil
 }

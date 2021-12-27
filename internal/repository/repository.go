@@ -116,7 +116,7 @@ func (r *Repository) GetOpenPositions(userID int32) (map[int32]*model.Position, 
 func (r *Repository) GetAllOpenPositions() (map[int32]*request.GetAllPositions, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	rows, err := r.conn.Query(ctx, "SELECT stock_id, id, count, price_open, stop_loss, take_profit FROM positions WHERE price_close is NULL")
+	rows, err := r.conn.Query(ctx, "SELECT user_id, stock_id, id, count, price_open, stop_loss, take_profit FROM positions WHERE price_close is NULL")
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (r *Repository) GetAllOpenPositions() (map[int32]*request.GetAllPositions, 
 	positions := make(map[int32]*request.GetAllPositions)
 	for rows.Next() {
 		var position request.GetAllPositions
-		err = rows.Scan(&position.StockID, &position.PositionID, &position.Count, &position.PriceOpen, &position.StopLoss, &position.TakeProfit)
+		err = rows.Scan(&position.UserID, &position.StockID, &position.PositionID, &position.Count, &position.PriceOpen, &position.StopLoss, &position.TakeProfit)
 		if err != nil {
 			return nil, err
 		}

@@ -4,6 +4,7 @@ package request
 // Position needed to transmit information about opening or closing a position
 type Position struct {
 	Act        string
+	UserID     int32
 	PositionID int32
 	StockID    int32
 	Count      int32
@@ -20,6 +21,7 @@ type ClosePosition struct {
 
 // GetAllPositions is struct for getting all open positions from database
 type GetAllPositions struct {
+	UserID     int32
 	StockID    int32
 	PositionID int32
 	Count      int32

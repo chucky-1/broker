@@ -136,6 +136,7 @@ func (s *Service) Open(stockID, count int32, stopLoss, takeProfit float32) (int3
 		Act:        "OPEN",
 		PositionID: position.ID,
 		StockID:    position.StockID,
+		UserID:     position.UserID,
 		Count:      position.Count,
 		Price:      position.PriceOpen,
 		StopLoss:   stopLoss,
