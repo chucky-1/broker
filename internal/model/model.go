@@ -15,4 +15,6 @@ type Position struct {
 	StockTitle string
 	Count      int32
 	PriceOpen  float32
+	StopLoss   float32
+	TakeProfit float32
 }

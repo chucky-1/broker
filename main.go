@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"github.com/caarlos0/env/v6"
 	"github.com/chucky-1/broker/internal/config"
 	"github.com/chucky-1/broker/internal/grpc/server"
@@ -11,9 +13,6 @@ import (
 	"github.com/jackc/pgx/v4"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
-
-	"context"
-	"fmt"
 	"net"
 )
 
@@ -40,26 +39,33 @@ func main() {
 	rep := repository.NewRepository(conn)
 
 	// Initializing dependencies
+	chSrvAdd := make(chan *service.Service)
+	chSrvDel := make(chan string)
 	chPosition := make(chan *request.Position)
 	chStock := make(chan *protocol.Stock)
-	err = service.NewBot(rep, chPosition, chStock)
+	err = service.NewBot(rep, chSrvAdd, chSrvDel, chPosition, chStock)
 	if err != nil {
 		log.Error(err)
 	}
-	srvStore := make(map[int32]*service.Service) // map[srv.User.ID]*srv
-	chanUserID := make(chan int32)
-	chanDeposit := make(chan float32)
+	srvStore := make(map[string]*service.Service) // map[grpcID]*srv
+	chanBoxInfo := make(chan *request.BoxInfo)
+	chanSrvDel := make(chan string) // For grpcID
 	chanService := make(chan *service.Service)
 	go func() {
+		go func() {
+			for grpcID := range chanSrvDel {
+				delete(srvStore, grpcID)
+			}
+		}()
 		for {
-			userID := <-chanUserID
-			deposit := <-chanDeposit
-			srv, err := service.NewService(rep, userID, deposit, chPosition)
+			info := <-chanBoxInfo
+			srv, err := service.NewService(rep, info.UserID, info.GrpcID, info.Deposit, chPosition)
 			if err != nil {
 				log.Error(err)
 			} else {
 				chanService <- srv
-				srvStore[srv.GetUser().ID] = srv
+				srvStore[info.GrpcID] = srv
+				chSrvAdd <- srv
 			}
 		}
 	}()
@@ -72,7 +78,7 @@ func main() {
 			log.Fatalf("failed to listen: %v", err)
 		}
 		s := grpc.NewServer()
-		protocol.RegisterPositionsServer(s, server.NewServer(chanUserID, chanDeposit, chanService))
+		protocol.RegisterPositionsServer(s, server.NewServer(chanBoxInfo, chanService, chanSrvDel, chSrvDel))
 		log.Infof("server listening at %v", lis.Addr())
 		if err = s.Serve(lis); err != nil {
 			log.Fatalf("failed to serve: %v", err)
@@ -118,7 +124,7 @@ func main() {
 					}()
 				}
 				chStock <- stock
-				// ch <- stock
+				//ch <- stock
 			}
 		}
 	}()

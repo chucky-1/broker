@@ -28,6 +28,8 @@ message Application {
   int32 stock_id = 4;
   int32 position_id = 5;
   int32 count = 6;
+  float stop_loss = 7;
+  float take_profit = 8;
 }
 
 message Detail {

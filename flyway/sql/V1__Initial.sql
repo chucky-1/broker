@@ -12,7 +12,9 @@ CREATE TABLE positions (
     price_open numeric NOT NULL,
     time_open timestamp,
     price_close numeric,
-    time_close timestamp
+    time_close timestamp,
+    stop_loss numeric,
+    take_profit numeric
 );
 
 CREATE SEQUENCE users_sequence;

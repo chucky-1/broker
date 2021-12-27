@@ -10,6 +10,9 @@ import (
 // Bot analyzes information on all open positions
 type Bot struct {
 	rep       *repository.Repository
+	services  map[string]*Service // map[grpcID]*service
+	chSrvAdd  chan *Service
+	chSrvDel  chan string // grpcID
 	positions map[int32]map[int32]*request.Position // map[stock.ID]map[position.ID]*position
 	chPos     chan *request.Position
 	stocks    map[int32]*protocol.Stock
@@ -17,12 +20,16 @@ type Bot struct {
 }
 
 // NewBot is struct
-func NewBot(rep *repository.Repository, chPos chan *request.Position, chStocks chan *protocol.Stock) error {
+func NewBot(rep *repository.Repository, chSrvAdd chan *Service, chSrvDel chan string, chPos chan *request.Position, chStocks chan *protocol.Stock) error {
 	b := &Bot{
 		rep:       rep,
+		services:  make(map[string]*Service),
+		chSrvAdd:  chSrvAdd,
+		chSrvDel:  chSrvDel,
 		positions: make(map[int32]map[int32]*request.Position),
 		chPos:     chPos,
-		stocks:    make(map[int32]*protocol.Stock), chStocks: chStocks,
+		stocks:    make(map[int32]*protocol.Stock),
+		chStocks:  chStocks,
 	}
 	positions, err := rep.GetAllOpenPositions()
 	if err != nil {
@@ -35,6 +42,8 @@ func NewBot(rep *repository.Repository, chPos chan *request.Position, chStocks c
 			StockID:    position.StockID,
 			Count:      position.Count,
 			Price:      position.PriceOpen,
+			StopLoss:   position.StopLoss,
+			TakeProfit: position.TakeProfit,
 		}
 		m, ok := b.positions[position.StockID]
 		if !ok {
@@ -44,6 +53,16 @@ func NewBot(rep *repository.Repository, chPos chan *request.Position, chStocks c
 			m[position.PositionID] = req
 		}
 	}
+	go func() {
+		for srv := range b.chSrvAdd {
+			b.services[srv.grpcID] = srv
+		}
+	}()
+	go func() {
+		for grpcID := range b.chSrvDel {
+			delete(b.services, grpcID)
+		}
+	}()
 	go func() {
 		for position := range chPos {
 			if position.Act == "OPEN" {
@@ -62,11 +81,17 @@ func NewBot(rep *repository.Repository, chPos chan *request.Position, chStocks c
 	go func() {
 		for stock := range b.chStocks {
 			b.stocks[stock.Id] = stock
-			stockID := stock.Id
+			cStock := stock
 			go func() {
-				for _, position := range b.positions[stockID] {
+				for _, position := range b.positions[cStock.Id] {
 					pnl := b.pnl(position.StockID, position.PositionID)
 					log.Infof("pnl for position ib %d is %f", position.PositionID, pnl)
+					switch {
+					case b.stopLoss(position, cStock):
+
+					case b.takeProfit(position, cStock):
+
+					}
 				}
 			}()
 		}
@@ -79,4 +104,12 @@ func (b *Bot) pnl(stockID, positionID int32) float32 {
 	position := b.positions[stockID][positionID]
 	stock := b.stocks[stockID]
 	return stock.Price * float32(position.Count) - position.Price * float32(position.Count)
+}
+
+func (b *Bot) stopLoss(position *request.Position, stock *protocol.Stock) bool {
+	return stock.Price <= position.StopLoss
+}
+
+func (b *Bot) takeProfit(position *request.Position, stock *protocol.Stock) bool {
+	return stock.Price >= position.TakeProfit
 }

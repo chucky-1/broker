@@ -18,6 +18,7 @@ import (
 type Service struct {
 	rep       *repository.Repository
 	user      *model.User
+	grpcID    string
 	positions map[int32]*model.Position // map[model.Position.ID]*model.Position
 	count     map[int32]int             // map[stock.ID]count. It is the total number of shares for different positions
 	stocks    map[int32]*protocol.Stock // map[stock.ID]*stock. Ih has the current stocks
@@ -26,9 +27,10 @@ type Service struct {
 }
 
 // NewService is constructor
-func NewService(rep *repository.Repository, userID int32, deposit float32, chnPos chan *request.Position) (*Service, error) {
+func NewService(rep *repository.Repository, userID int32, grpcID string, deposit float32, chnPos chan *request.Position) (*Service, error) {
 	s := Service{
 		rep:    rep,
+		grpcID: grpcID,
 		count:  make(map[int32]int),
 		stocks: make(map[int32]*protocol.Stock),
 		ch:     make(chan *protocol.Stock),
@@ -81,7 +83,7 @@ func (s *Service) SignIn(id int32) (*model.User, error) {
 }
 
 // Open creates a new position
-func (s *Service) Open(stockID, count int32) (int32, error) {
+func (s *Service) Open(stockID, count int32, stopLoss, takeProfit float32) (int32, error) {
 	_, ok := s.stocks[stockID]
 	if !ok {
 		return 0, fmt.Errorf("stock with id %d didn't find", stockID)
@@ -92,6 +94,8 @@ func (s *Service) Open(stockID, count int32) (int32, error) {
 		StockTitle: s.stocks[stockID].Title,
 		Count:      count,
 		PriceOpen:  s.stocks[stockID].Price,
+		StopLoss:   stopLoss,
+		TakeProfit: takeProfit,
 	}
 	currentBalance := s.GetBalance()
 	sum := position.PriceOpen * float32(count)
@@ -134,6 +138,8 @@ func (s *Service) Open(stockID, count int32) (int32, error) {
 		StockID:    position.StockID,
 		Count:      position.Count,
 		Price:      position.PriceOpen,
+		StopLoss:   stopLoss,
+		TakeProfit: takeProfit,
 	}
 	return position.ID, nil
 }

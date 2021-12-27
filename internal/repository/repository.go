@@ -51,8 +51,9 @@ func (r *Repository) Open(position *model.Position, t time.Time) (int32, error) 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	rows, err := r.conn.Query(ctx, "INSERT INTO positions (id, user_id, stock_id, stock_name, count, price_open, " +
-		"time_open, price_close, time_close) VALUES (nextval('positions_sequence'), $1, $2, $3, $4, $5, $6, NULL, NULL) " +
-		"RETURNING id;", position.UserID, position.StockID, position.StockTitle, position.Count, position.PriceOpen, t)
+		"time_open, price_close, time_close, stop_loss, take_profit) " +
+		"VALUES (nextval('positions_sequence'), $1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8) RETURNING id;",
+		position.UserID, position.StockID, position.StockTitle, position.Count, position.PriceOpen, t, position.StopLoss, position.TakeProfit)
 	if err != nil {
 		return 0, err
 	}
@@ -91,7 +92,7 @@ func (r *Repository) GetOpenPositions(userID int32) (map[int32]*model.Position, 
 	var count int32
 	r.conn.QueryRow(ctx, "SELECT count(*) FROM positions WHERE user_id = $1 AND price_close is NULL", userID).Scan(&count)
 
-	rows, err := r.conn.Query(ctx, "SELECT id, user_id, stock_id, stock_name, count, price_open " +
+	rows, err := r.conn.Query(ctx, "SELECT id, user_id, stock_id, stock_name, count, price_open, stop_loss, take_profit " +
 		"FROM positions WHERE user_id = $1 AND price_close is NULL", userID)
 	if err != nil {
 		return nil, err
@@ -102,7 +103,7 @@ func (r *Repository) GetOpenPositions(userID int32) (map[int32]*model.Position, 
 	for rows.Next() {
 		position := model.Position{}
 		err = rows.Scan(&position.ID, &position.UserID, &position.StockID,
-			&position.StockTitle, &position.Count, &position.PriceOpen)
+			&position.StockTitle, &position.Count, &position.PriceOpen, &position.StopLoss, &position.TakeProfit)
 		if err != nil {
 			return nil, err
 		}
@@ -115,7 +116,7 @@ func (r *Repository) GetOpenPositions(userID int32) (map[int32]*model.Position, 
 func (r *Repository) GetAllOpenPositions() (map[int32]*request.GetAllPositions, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	rows, err := r.conn.Query(ctx, "SELECT stock_id, id, count, price_open FROM positions WHERE price_close is NULL")
+	rows, err := r.conn.Query(ctx, "SELECT stock_id, id, count, price_open, stop_loss, take_profit FROM positions WHERE price_close is NULL")
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +125,7 @@ func (r *Repository) GetAllOpenPositions() (map[int32]*request.GetAllPositions, 
 	positions := make(map[int32]*request.GetAllPositions)
 	for rows.Next() {
 		var position request.GetAllPositions
-		err = rows.Scan(&position.StockID, &position.PositionID, &position.Count, &position.PriceOpen)
+		err = rows.Scan(&position.StockID, &position.PositionID, &position.Count, &position.PriceOpen, &position.StopLoss, &position.TakeProfit)
 		if err != nil {
 			return nil, err
 		}
