@@ -69,6 +69,7 @@ func NewBot(rep *repository.Repository, chSrvAdd chan *Service, chSrvDel chan st
 				m, ok := b.positions[position.StockID]
 				if !ok {
 					b.positions[position.StockID] = make(map[int32]*request.Position)
+					b.positions[position.StockID][position.PositionID] = position
 				} else {
 					m[position.PositionID] = position
 				}
