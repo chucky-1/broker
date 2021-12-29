@@ -117,7 +117,7 @@ func main() {
 					Ask:  price.Ask,
 					Time: price.Update.Seconds,
 				}
-				ch <- s
+				//ch <- s
 				chSrv <- s
 			}
 		}

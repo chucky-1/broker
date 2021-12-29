@@ -65,7 +65,7 @@ func TestService_stopLoss(t *testing.T) {
 
 	for _, testCase := range testTable {
 		t.Run(testCase.name, func(t *testing.T) {
-			_, b := stopLoss(testCase.position, testCase.price)
+			b := stopLoss(testCase.position, testCase.price)
 			assert.Equal(t, testCase.expect, b)
 		})
 	}
@@ -130,7 +130,7 @@ func TestService_takeProfit(t *testing.T) {
 
 	for _, testCase := range testTable {
 		t.Run(testCase.name, func(t *testing.T) {
-			_, b := takeProfit(testCase.position, testCase.price)
+			b := takeProfit(testCase.position, testCase.price)
 			assert.Equal(t, testCase.expect, b)
 		})
 	}

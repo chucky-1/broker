@@ -41,30 +41,16 @@ func NewService(rep *repository.Repository, chPrice chan *model.Price, symbols m
 				for _, position := range s.allPositionsBySymbol[price.ID] {
 					pnl := s.pnl(position.ID)
 					log.Infof("pnl for position %d is %f", position.ID, pnl)
-					p, ok := stopLoss(position, s.prices[position.ID])
-					if ok {
-						err := s.rep.ClosePosition(&request.ClosePosition{
-							ID:         position.ID,
-							PriceClose: p,
-						})
+					if stopLoss(position, s.prices[position.SymbolID]) {
+						err := s.ClosePosition(position.ID)
 						if err != nil {
 							log.Error(err)
-						} else {
-							delete(s.positions, position.ID)
-							delete(s.allPositionsBySymbol[position.SymbolID], position.ID)
 						}
 					}
-					p, ok = takeProfit(position, s.prices[position.ID])
-					if ok {
-						err := s.rep.ClosePosition(&request.ClosePosition{
-							ID:         position.ID,
-							PriceClose: p,
-						})
+					if takeProfit(position, s.prices[position.SymbolID]) {
+						err := s.ClosePosition(position.ID)
 						if err != nil {
 							log.Error(err)
-						} else {
-							delete(s.positions, position.ID)
-							delete(s.allPositionsBySymbol[position.SymbolID], position.ID)
 						}
 					}
 				}
@@ -161,6 +147,13 @@ func (s *Service) OpenPosition(r *request.OpenPositionService) (int32, error) {
 		IsBuy: r.IsBuy,
 	}
 	s.positions[id] = &position
+	allPositions, ok := s.allPositionsBySymbol[position.SymbolID]
+	if !ok {
+		s.allPositionsBySymbol[position.SymbolID] = make(map[int32]*model.Position)
+		s.allPositionsBySymbol[position.SymbolID][position.ID] = &position
+	} else {
+		allPositions[position.ID] = &position
+	}
 	return id, nil
 }
 
@@ -195,6 +188,7 @@ func (s *Service) ClosePosition(positionID int32) error {
 		return err
 	}
 	delete(s.positions, positionID)
+	delete(s.allPositionsBySymbol[position.SymbolID], positionID)
 	return nil
 }
 
@@ -219,20 +213,20 @@ func (s *Service) checkTransaction(balance, sum float32) bool {
 // pnl is Profit and loss. Shows how much you earned or lost
 func (s *Service) pnl(positionID int32) float32 {
 	position := s.positions[positionID]
-	price := s.prices[position.ID]
+	price := s.prices[position.SymbolID]
 	return price.Bid * float32(position.Count) - position.PriceOpen * float32(position.Count)
 }
 
-func stopLoss(position *model.Position, price *model.Price) (float32, bool) {
+func stopLoss(position *model.Position, price *model.Price) bool {
 	if position.IsBuy == true {
-		return price.Ask, price.Ask <= position.StopLoss
+		return price.Ask <= position.StopLoss
 	}
-	return price.Bid, price.Bid >= position.StopLoss
+	return price.Bid >= position.StopLoss
 }
 
-func takeProfit(position *model.Position, price *model.Price) (float32, bool) {
+func takeProfit(position *model.Position, price *model.Price) bool {
 	if position.IsBuy == true {
-		return price.Ask, price.Ask >= position.TakeProfit
+		return price.Ask >= position.TakeProfit
 	}
-	return price.Bid, price.Bid <= position.TakeProfit
+	return price.Bid <= position.TakeProfit
 }
