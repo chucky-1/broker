@@ -18,7 +18,7 @@ import (
 	"strconv"
 )
 
-const countOfSymbols = 3
+const countOfSymbols = 5
 
 func main() {
 	// Configuration
@@ -118,7 +118,7 @@ func main() {
 					Time: price.Update.Seconds,
 				}
 				ch <- s
-
+				chSrv <- s
 			}
 		}
 	}()

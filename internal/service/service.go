@@ -49,6 +49,9 @@ func NewService(rep *repository.Repository, chPrice chan *model.Price, symbols m
 						})
 						if err != nil {
 							log.Error(err)
+						} else {
+							delete(s.positions, position.ID)
+							delete(s.allPositionsBySymbol[position.SymbolID], position.ID)
 						}
 					}
 					p, ok = takeProfit(position, s.prices[position.ID])
@@ -59,6 +62,9 @@ func NewService(rep *repository.Repository, chPrice chan *model.Price, symbols m
 						})
 						if err != nil {
 							log.Error(err)
+						} else {
+							delete(s.positions, position.ID)
+							delete(s.allPositionsBySymbol[position.SymbolID], position.ID)
 						}
 					}
 				}
