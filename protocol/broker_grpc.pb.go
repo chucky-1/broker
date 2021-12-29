@@ -14,233 +14,268 @@ import (
 // Requires gRPC-Go v1.32.0 or later.
 const _ = grpc.SupportPackageIsVersion7
 
-// PricesClient is the client API for Prices service.
+// BrokerClient is the client API for Broker service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type PricesClient interface {
-	SubAll(ctx context.Context, in *Request, opts ...grpc.CallOption) (Prices_SubAllClient, error)
+type BrokerClient interface {
+	SignUp(ctx context.Context, in *SignUpRequest, opts ...grpc.CallOption) (*SignUpResponse, error)
+	SignIn(ctx context.Context, in *SignInRequest, opts ...grpc.CallOption) (*SignInResponse, error)
+	OpenPosition(ctx context.Context, in *OpenPositionRequest, opts ...grpc.CallOption) (*OpenPositionResponse, error)
+	ClosePosition(ctx context.Context, in *ClosePositionRequest, opts ...grpc.CallOption) (*ClosePositionResponse, error)
+	SetBalance(ctx context.Context, in *SetBalanceRequest, opts ...grpc.CallOption) (*SetBalanceResponse, error)
+	GetBalance(ctx context.Context, in *GetBalanceRequest, opts ...grpc.CallOption) (*GetBalanceResponse, error)
 }
 
-type pricesClient struct {
+type brokerClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewPricesClient(cc grpc.ClientConnInterface) PricesClient {
-	return &pricesClient{cc}
+func NewBrokerClient(cc grpc.ClientConnInterface) BrokerClient {
+	return &brokerClient{cc}
 }
 
-func (c *pricesClient) SubAll(ctx context.Context, in *Request, opts ...grpc.CallOption) (Prices_SubAllClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Prices_ServiceDesc.Streams[0], "/pgrpc.Prices/SubAll", opts...)
+func (c *brokerClient) SignUp(ctx context.Context, in *SignUpRequest, opts ...grpc.CallOption) (*SignUpResponse, error) {
+	out := new(SignUpResponse)
+	err := c.cc.Invoke(ctx, "/pgrpc.Broker/SignUp", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &pricesSubAllClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
+	return out, nil
 }
 
-type Prices_SubAllClient interface {
-	Recv() (*Stock, error)
-	grpc.ClientStream
-}
-
-type pricesSubAllClient struct {
-	grpc.ClientStream
-}
-
-func (x *pricesSubAllClient) Recv() (*Stock, error) {
-	m := new(Stock)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-// PricesServer is the server API for Prices service.
-// All implementations must embed UnimplementedPricesServer
-// for forward compatibility
-type PricesServer interface {
-	SubAll(*Request, Prices_SubAllServer) error
-	mustEmbedUnimplementedPricesServer()
-}
-
-// UnimplementedPricesServer must be embedded to have forward compatible implementations.
-type UnimplementedPricesServer struct {
-}
-
-func (UnimplementedPricesServer) SubAll(*Request, Prices_SubAllServer) error {
-	return status.Errorf(codes.Unimplemented, "method SubAll not implemented")
-}
-func (UnimplementedPricesServer) mustEmbedUnimplementedPricesServer() {}
-
-// UnsafePricesServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to PricesServer will
-// result in compilation errors.
-type UnsafePricesServer interface {
-	mustEmbedUnimplementedPricesServer()
-}
-
-func RegisterPricesServer(s grpc.ServiceRegistrar, srv PricesServer) {
-	s.RegisterService(&Prices_ServiceDesc, srv)
-}
-
-func _Prices_SubAll_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(Request)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(PricesServer).SubAll(m, &pricesSubAllServer{stream})
-}
-
-type Prices_SubAllServer interface {
-	Send(*Stock) error
-	grpc.ServerStream
-}
-
-type pricesSubAllServer struct {
-	grpc.ServerStream
-}
-
-func (x *pricesSubAllServer) Send(m *Stock) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-// Prices_ServiceDesc is the grpc.ServiceDesc for Prices service.
-// It's only intended for direct use with grpc.RegisterService,
-// and not to be introspected or modified (even as a copy)
-var Prices_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "pgrpc.Prices",
-	HandlerType: (*PricesServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams: []grpc.StreamDesc{
-		{
-			StreamName:    "SubAll",
-			Handler:       _Prices_SubAll_Handler,
-			ServerStreams: true,
-		},
-	},
-	Metadata: "protocol/broker.proto",
-}
-
-// PositionsClient is the client API for Positions service.
-//
-// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type PositionsClient interface {
-	Position(ctx context.Context, opts ...grpc.CallOption) (Positions_PositionClient, error)
-}
-
-type positionsClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewPositionsClient(cc grpc.ClientConnInterface) PositionsClient {
-	return &positionsClient{cc}
-}
-
-func (c *positionsClient) Position(ctx context.Context, opts ...grpc.CallOption) (Positions_PositionClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Positions_ServiceDesc.Streams[0], "/pgrpc.Positions/Position", opts...)
+func (c *brokerClient) SignIn(ctx context.Context, in *SignInRequest, opts ...grpc.CallOption) (*SignInResponse, error) {
+	out := new(SignInResponse)
+	err := c.cc.Invoke(ctx, "/pgrpc.Broker/SignIn", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &positionsPositionClient{stream}
-	return x, nil
+	return out, nil
 }
 
-type Positions_PositionClient interface {
-	Send(*Application) error
-	Recv() (*Response, error)
-	grpc.ClientStream
-}
-
-type positionsPositionClient struct {
-	grpc.ClientStream
-}
-
-func (x *positionsPositionClient) Send(m *Application) error {
-	return x.ClientStream.SendMsg(m)
-}
-
-func (x *positionsPositionClient) Recv() (*Response, error) {
-	m := new(Response)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
+func (c *brokerClient) OpenPosition(ctx context.Context, in *OpenPositionRequest, opts ...grpc.CallOption) (*OpenPositionResponse, error) {
+	out := new(OpenPositionResponse)
+	err := c.cc.Invoke(ctx, "/pgrpc.Broker/OpenPosition", in, out, opts...)
+	if err != nil {
 		return nil, err
 	}
-	return m, nil
+	return out, nil
 }
 
-// PositionsServer is the server API for Positions service.
-// All implementations must embed UnimplementedPositionsServer
+func (c *brokerClient) ClosePosition(ctx context.Context, in *ClosePositionRequest, opts ...grpc.CallOption) (*ClosePositionResponse, error) {
+	out := new(ClosePositionResponse)
+	err := c.cc.Invoke(ctx, "/pgrpc.Broker/ClosePosition", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *brokerClient) SetBalance(ctx context.Context, in *SetBalanceRequest, opts ...grpc.CallOption) (*SetBalanceResponse, error) {
+	out := new(SetBalanceResponse)
+	err := c.cc.Invoke(ctx, "/pgrpc.Broker/SetBalance", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *brokerClient) GetBalance(ctx context.Context, in *GetBalanceRequest, opts ...grpc.CallOption) (*GetBalanceResponse, error) {
+	out := new(GetBalanceResponse)
+	err := c.cc.Invoke(ctx, "/pgrpc.Broker/GetBalance", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// BrokerServer is the server API for Broker service.
+// All implementations must embed UnimplementedBrokerServer
 // for forward compatibility
-type PositionsServer interface {
-	Position(Positions_PositionServer) error
-	mustEmbedUnimplementedPositionsServer()
+type BrokerServer interface {
+	SignUp(context.Context, *SignUpRequest) (*SignUpResponse, error)
+	SignIn(context.Context, *SignInRequest) (*SignInResponse, error)
+	OpenPosition(context.Context, *OpenPositionRequest) (*OpenPositionResponse, error)
+	ClosePosition(context.Context, *ClosePositionRequest) (*ClosePositionResponse, error)
+	SetBalance(context.Context, *SetBalanceRequest) (*SetBalanceResponse, error)
+	GetBalance(context.Context, *GetBalanceRequest) (*GetBalanceResponse, error)
+	mustEmbedUnimplementedBrokerServer()
 }
 
-// UnimplementedPositionsServer must be embedded to have forward compatible implementations.
-type UnimplementedPositionsServer struct {
+// UnimplementedBrokerServer must be embedded to have forward compatible implementations.
+type UnimplementedBrokerServer struct {
 }
 
-func (UnimplementedPositionsServer) Position(Positions_PositionServer) error {
-	return status.Errorf(codes.Unimplemented, "method Position not implemented")
+func (UnimplementedBrokerServer) SignUp(context.Context, *SignUpRequest) (*SignUpResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignUp not implemented")
 }
-func (UnimplementedPositionsServer) mustEmbedUnimplementedPositionsServer() {}
+func (UnimplementedBrokerServer) SignIn(context.Context, *SignInRequest) (*SignInResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignIn not implemented")
+}
+func (UnimplementedBrokerServer) OpenPosition(context.Context, *OpenPositionRequest) (*OpenPositionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OpenPosition not implemented")
+}
+func (UnimplementedBrokerServer) ClosePosition(context.Context, *ClosePositionRequest) (*ClosePositionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClosePosition not implemented")
+}
+func (UnimplementedBrokerServer) SetBalance(context.Context, *SetBalanceRequest) (*SetBalanceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetBalance not implemented")
+}
+func (UnimplementedBrokerServer) GetBalance(context.Context, *GetBalanceRequest) (*GetBalanceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBalance not implemented")
+}
+func (UnimplementedBrokerServer) mustEmbedUnimplementedBrokerServer() {}
 
-// UnsafePositionsServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to PositionsServer will
+// UnsafeBrokerServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to BrokerServer will
 // result in compilation errors.
-type UnsafePositionsServer interface {
-	mustEmbedUnimplementedPositionsServer()
+type UnsafeBrokerServer interface {
+	mustEmbedUnimplementedBrokerServer()
 }
 
-func RegisterPositionsServer(s grpc.ServiceRegistrar, srv PositionsServer) {
-	s.RegisterService(&Positions_ServiceDesc, srv)
+func RegisterBrokerServer(s grpc.ServiceRegistrar, srv BrokerServer) {
+	s.RegisterService(&Broker_ServiceDesc, srv)
 }
 
-func _Positions_Position_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(PositionsServer).Position(&positionsPositionServer{stream})
-}
-
-type Positions_PositionServer interface {
-	Send(*Response) error
-	Recv() (*Application, error)
-	grpc.ServerStream
-}
-
-type positionsPositionServer struct {
-	grpc.ServerStream
-}
-
-func (x *positionsPositionServer) Send(m *Response) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-func (x *positionsPositionServer) Recv() (*Application, error) {
-	m := new(Application)
-	if err := x.ServerStream.RecvMsg(m); err != nil {
+func _Broker_SignUp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignUpRequest)
+	if err := dec(in); err != nil {
 		return nil, err
 	}
-	return m, nil
+	if interceptor == nil {
+		return srv.(BrokerServer).SignUp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pgrpc.Broker/SignUp",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BrokerServer).SignUp(ctx, req.(*SignUpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
-// Positions_ServiceDesc is the grpc.ServiceDesc for Positions service.
+func _Broker_SignIn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignInRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BrokerServer).SignIn(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pgrpc.Broker/SignIn",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BrokerServer).SignIn(ctx, req.(*SignInRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Broker_OpenPosition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenPositionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BrokerServer).OpenPosition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pgrpc.Broker/OpenPosition",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BrokerServer).OpenPosition(ctx, req.(*OpenPositionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Broker_ClosePosition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClosePositionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BrokerServer).ClosePosition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pgrpc.Broker/ClosePosition",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BrokerServer).ClosePosition(ctx, req.(*ClosePositionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Broker_SetBalance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetBalanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BrokerServer).SetBalance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pgrpc.Broker/SetBalance",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BrokerServer).SetBalance(ctx, req.(*SetBalanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Broker_GetBalance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBalanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BrokerServer).GetBalance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pgrpc.Broker/GetBalance",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BrokerServer).GetBalance(ctx, req.(*GetBalanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Broker_ServiceDesc is the grpc.ServiceDesc for Broker service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var Positions_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "pgrpc.Positions",
-	HandlerType: (*PositionsServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams: []grpc.StreamDesc{
+var Broker_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "pgrpc.Broker",
+	HandlerType: (*BrokerServer)(nil),
+	Methods: []grpc.MethodDesc{
 		{
-			StreamName:    "Position",
-			Handler:       _Positions_Position_Handler,
-			ServerStreams: true,
-			ClientStreams: true,
+			MethodName: "SignUp",
+			Handler:    _Broker_SignUp_Handler,
+		},
+		{
+			MethodName: "SignIn",
+			Handler:    _Broker_SignIn_Handler,
+		},
+		{
+			MethodName: "OpenPosition",
+			Handler:    _Broker_OpenPosition_Handler,
+		},
+		{
+			MethodName: "ClosePosition",
+			Handler:    _Broker_ClosePosition_Handler,
+		},
+		{
+			MethodName: "SetBalance",
+			Handler:    _Broker_SetBalance_Handler,
+		},
+		{
+			MethodName: "GetBalance",
+			Handler:    _Broker_GetBalance_Handler,
 		},
 	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "protocol/broker.proto",
 }

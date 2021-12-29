@@ -4,44 +4,59 @@ option go_package = "github.com/chucky-1/broker/protocol";
 
 package pgrpc;
 
-service Prices {
-  rpc SubAll(Request) returns (stream Stock) {}
+service Broker {
+  rpc SignUp (SignUpRequest) returns (SignUpResponse) {}
+  rpc SignIn (SignInRequest) returns (SignInResponse) {}
+  rpc OpenPosition (OpenPositionRequest) returns (OpenPositionResponse) {}
+  rpc ClosePosition (ClosePositionRequest) returns (ClosePositionResponse) {}
+  rpc SetBalance (SetBalanceRequest) returns (SetBalanceResponse) {}
+  rpc GetBalance (GetBalanceRequest) returns (GetBalanceResponse) {}
 }
 
-service Positions {
-  rpc Position (stream Application) returns (stream Response) {}
+message SignUpRequest {
+  float deposit = 1;
 }
 
-message Stock {
-  int32 id = 1;
-  string title = 2;
-  float price = 3;
-  string update = 4;
-}
-
-message Request {}
-
-message Application {
+message SignUpResponse {
   int32 user_id = 1;
-  float deposit = 2;
-  string act = 3;
-  int32 stock_id = 4;
-  int32 position_id = 5;
-  int32 count = 6;
-  float stop_loss = 7;
-  float take_profit = 8;
 }
 
-message Detail {
-  Stock stock = 1;
-  int32 count = 2;
+message SignInRequest {
+  int32 user_id = 1;
 }
 
-message Response {
-  string act = 1;
-  string message = 2;
-  float balance = 3;
-  int32 position_id = 4;
-  float balance_real_time = 5;
-  repeated Detail details = 6;
+message SignInResponse {}
+
+message OpenPositionRequest {
+  int32 user_id = 1;
+  int32 symbol_id = 2;
+  int32 count = 3;
+  float stop_loss = 4;
+  float take_profit = 5;
+  bool is_buy = 6;
+}
+
+message OpenPositionResponse {
+  int32 position_id = 1;
+}
+
+message ClosePositionRequest {
+  int32 position_id = 1;
+}
+
+message ClosePositionResponse {}
+
+message SetBalanceRequest {
+  int32 user_id = 1;
+  float sum = 2;
+}
+
+message SetBalanceResponse {}
+
+message GetBalanceRequest {
+  int32 user_id = 1;
+}
+
+message GetBalanceResponse {
+  float sum = 1;
 }

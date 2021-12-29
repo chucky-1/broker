@@ -1,21 +1,24 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"github.com/caarlos0/env/v6"
 	"github.com/chucky-1/broker/internal/config"
 	"github.com/chucky-1/broker/internal/grpc/server"
+	"github.com/chucky-1/broker/internal/model"
 	"github.com/chucky-1/broker/internal/repository"
-	"github.com/chucky-1/broker/internal/request"
 	"github.com/chucky-1/broker/internal/service"
 	"github.com/chucky-1/broker/protocol"
+	pricer "github.com/chucky-1/pricer/protocol"
 	"github.com/jackc/pgx/v4"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
-
-	"context"
-	"fmt"
 	"net"
+	"strconv"
 )
+
+const countOfSymbols = 3
 
 func main() {
 	// Configuration
@@ -37,41 +40,27 @@ func main() {
 			log.Error(err)
 		}
 	}(conn, context.Background())
-	rep := repository.NewRepository(conn)
 
-	// Initializing dependencies
-	chSrvAdd := make(chan *service.Service)
-	chSrvDel := make(chan string)
-	chPosition := make(chan *request.Position)
-	chStock := make(chan *protocol.Stock)
-	err = service.NewBot(rep, chSrvAdd, chSrvDel, chPosition, chStock)
-	if err != nil {
-		log.Error(err)
-	}
-	srvStore := make(map[string]*service.Service) // map[grpcID]*srv
-	chanBoxInfo := make(chan *request.BoxInfo)
-	chanSrvDel := make(chan string) // For grpcID
-	chanService := make(chan *service.Service)
-	go func() {
-		go func() {
-			for grpcID := range chanSrvDel {
-				delete(srvStore, grpcID)
-			}
-		}()
-		for {
-			info := <-chanBoxInfo
-			srv, err := service.NewService(rep, info.UserID, info.GrpcID, info.Deposit, chPosition)
-			if err != nil {
-				log.Error(err)
-			} else {
-				chanService <- srv
-				srvStore[info.GrpcID] = srv
-				chSrvAdd <- srv
-			}
+	// Initial dependencies
+	symbols := map[int32]*model.Symbol{}
+	symbolID := make([]int32, 0, countOfSymbols)
+	for i := 0; i < countOfSymbols; i++ {
+		title := fmt.Sprint("Symbol ", strconv.Itoa(i + 1))
+		symbols[int32(i+1)] = &model.Symbol{
+			ID:    int32(i+1),
+			Title: title,
 		}
-	}()
+		symbolID = append(symbolID, int32(i+1))
+	}
+	ch := make(chan *model.Price) // this chan is listened in main.go
+	chSrv := make(chan *model.Price) // this chan is listened in service.go
+	rep := repository.NewRepository(conn)
+	srv, err := service.NewService(rep, chSrv, symbols)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// Grpc Positions
+	// Grpc Broker
 	go func() {
 		hostAndPort := fmt.Sprint(cfg.HostGrpcServer, ":", cfg.PortGrpcServer)
 		lis, err := net.Listen("tcp", hostAndPort)
@@ -79,14 +68,12 @@ func main() {
 			log.Fatalf("failed to listen: %v", err)
 		}
 		s := grpc.NewServer()
-		protocol.RegisterPositionsServer(s, server.NewServer(chanBoxInfo, chanService, chanSrvDel, chSrvDel))
+		protocol.RegisterBrokerServer(s, server.NewServer(srv))
 		log.Infof("server listening at %v", lis.Addr())
 		if err = s.Serve(lis); err != nil {
 			log.Fatalf("failed to serve: %v", err)
 		}
 	}()
-
-	ch := make(chan *protocol.Stock) // this chan is listened in main.go
 
 	// Grpc Prices
 	go func() {
@@ -101,8 +88,15 @@ func main() {
 				log.Fatal(err)
 			}
 		}(clientConn)
-		client := protocol.NewPricesClient(clientConn)
-		stream, err := client.SubAll(context.Background(), &protocol.Request{})
+		client := pricer.NewPricesClient(clientConn)
+		stream, err := client.Subscribe(context.Background())
+		if err != nil {
+			return
+		}
+		err = stream.Send(&pricer.SubscribeRequest{
+			Action:   0,
+			PriceId: symbolID,
+		})
 		if err != nil {
 			return
 		}
@@ -112,26 +106,25 @@ func main() {
 			case <-stream.Context().Done():
 				return
 			default:
-				stock, err := stream.Recv()
+				price, err := stream.Recv()
 				if err != nil {
 					log.Error(err)
 					continue
 				}
-				if len(srvStore) > 0 {
-					go func() {
-						for _, s := range srvStore {
-							s.GetChan() <- stock
-						}
-					}()
+				s := &model.Price{
+					ID:   price.PriceId,
+					Bid:  price.Bid,
+					Ask:  price.Ask,
+					Time: price.Update.Seconds,
 				}
-				chStock <- stock
-				// ch <- stock
+				ch <- s
+
 			}
 		}
 	}()
 
 	for {
-		stock := <-ch
-		log.Info(stock)
+		symbol := <-ch
+		log.Info(symbol)
 	}
 }

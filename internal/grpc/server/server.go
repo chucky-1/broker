@@ -5,153 +5,78 @@ import (
 	"github.com/chucky-1/broker/internal/request"
 	"github.com/chucky-1/broker/internal/service"
 	"github.com/chucky-1/broker/protocol"
-	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 
-	"errors"
+	"context"
 	"fmt"
 )
 
 // Server contains methods of application on service side of grpc
 type Server struct {
-	protocol.UnimplementedPositionsServer
-	chanBoxInfo chan *request.BoxInfo
-	chanService chan *service.Service
-	chanSrvDel  chan string
-	chanSrvDel2 chan string
+	protocol.UnimplementedBrokerServer
+	srv *service.Service
 }
 
 // NewServer is constructor
-func NewServer(chanBoxInfo chan *request.BoxInfo, chanService chan *service.Service, chanSrvDel, chanSrvDel2 chan string) *Server {
-	return &Server{chanBoxInfo: chanBoxInfo, chanService: chanService, chanSrvDel: chanSrvDel, chanSrvDel2: chanSrvDel2}
+func NewServer(srv *service.Service) *Server {
+	return &Server{srv: srv}
 }
 
-// Position listens commands from client and does work
-func (s *Server) Position(stream protocol.Positions_PositionServer) error {
-	grpcID := uuid.New().String()
-
-	recv, err := stream.Recv()
+func (s *Server)SignUp(ctx context.Context, r *protocol.SignUpRequest) (*protocol.SignUpResponse, error) {
+	id, err := s.srv.SignUp(r.Deposit)
 	if err != nil {
-		log.Error(err)
-		return errors.New("initialization error")
+		return nil, err
 	}
-	if recv.Act != "INIT" {
-		return errors.New("initialization error")
-	}
+	return &protocol.SignUpResponse{UserId: id}, nil
+}
 
-	info := request.BoxInfo{
-		UserID:  recv.UserId,
-		GrpcID:  grpcID,
-		Deposit: recv.Deposit,
-	}
-	s.chanBoxInfo <- &info
-	srv := <-s.chanService
+func (s *Server)SignIn(ctx context.Context, r *protocol.SignInRequest) (*protocol.SignInResponse, error) {
+	return &protocol.SignInResponse{}, nil
+}
 
-	err = stream.Send(&protocol.Response{
-		Act:     "INIT",
-		Message: "You have successfully logged into the system",
+func (s *Server) OpenPosition(ctx context.Context, r *protocol.OpenPositionRequest) (*protocol.OpenPositionResponse, error) {
+	positionID, err := s.srv.OpenPosition(&request.OpenPositionService{
+		UserID:     r.UserId,
+		SymbolID:   r.SymbolId,
+		Count:      r.Count,
+		StopLoss:   r.StopLoss,
+		TakeProfit: r.TakeProfit,
+		IsBuy:      r.IsBuy,
 	})
 	if err != nil {
-		log.Error(err)
-	}
-	for {
-		select {
-		case <-stream.Context().Done():
-			s.chanSrvDel <- grpcID
-			s.chanSrvDel2 <- grpcID
-			return stream.Context().Err()
-		default:
-			recv, err = stream.Recv()
-			if err != nil {
-				log.Error(err)
-				continue
-			}
-			switch {
-			case recv.Act == "OPEN":
-				positionID, err := srv.Open(recv.StockId, recv.Count, recv.StopLoss, recv.TakeProfit)
-				if err != nil {
-					if err.Error() == fmt.Sprintf("stock with id %d didn't find", recv.StockId) {
-						errSend := stream.Send(&protocol.Response{
-							Act:     "OPEN",
-							Message: err.Error(),
-						})
-						if errSend != nil {
-							log.Error(errSend)
-						}
-						continue
-					}
-					if err.Error() == "not enough money" {
-						errSend := stream.Send(&protocol.Response{
-							Act:     "OPEN",
-							Message: err.Error(),
-						})
-						if errSend != nil {
-							log.Error(errSend)
-						}
-						continue
-					}
-					log.Error(err)
-					errSend := stream.Send(&protocol.Response{
-						Act:     "OPEN",
-						Message: "Position didn't open. Try else!",
-					})
-					if errSend != nil {
-						log.Error(errSend)
-					}
-				} else {
-					err = stream.Send(&protocol.Response{
-						Act:        "OPEN",
-						Message:    "Position successfully opened",
-						PositionId: positionID,
-					})
-					if err != nil {
-						log.Error(err)
-					}
-				}
-			case recv.Act == "CLOSE":
-				err = srv.Close(recv.PositionId)
-				if err != nil {
-					if err.Error() == fmt.Sprintf("you did not open a position with id %d", recv.PositionId) {
-						errSend := stream.Send(&protocol.Response{
-							Act:        "CLOSE",
-							Message:    err.Error(),
-							PositionId: recv.PositionId,
-						})
-						if errSend != nil {
-							log.Error(errSend)
-						}
-						continue
-					}
-					log.Error(err)
-					errSend := stream.Send(&protocol.Response{
-						Act:        "CLOSE",
-						Message:    "Position didn't close",
-						PositionId: recv.PositionId,
-					})
-					if errSend != nil {
-						log.Error(errSend)
-					}
-				} else {
-					err = stream.Send(&protocol.Response{
-						Act:        "CLOSE",
-						Message:    "Position successfully closed",
-						PositionId: recv.PositionId,
-					})
-					if err != nil {
-						log.Error(err)
-					}
-				}
-			case recv.Act == "BALANCE":
-				balance := srv.GetBalance()
-				err = stream.Send(&protocol.Response{
-					Act:     "BALANCE",
-					Message: "Balance received successfully",
-					Balance: balance,
-				})
-				if err != nil {
-					log.Error(err)
-				}
-			}
+		if err.Error() == fmt.Sprintf("symbol with id %d didn't find", r.SymbolId) {
+			return nil, err
 		}
+		if err.Error() == "not enough money" {
+			return nil, err
+		}
+		log.Error(err)
+		return nil, err
 	}
+	return &protocol.OpenPositionResponse{PositionId: positionID}, nil
+}
+
+func (s *Server) ClosePosition(ctx context.Context, request *protocol.ClosePositionRequest) (*protocol.ClosePositionResponse, error) {
+	err := s.srv.ClosePosition(request.PositionId)
+	if err != nil {
+		if err.Error() == fmt.Sprintf("you did not open a position with id %d", request.PositionId) {
+			return nil, err
+		}
+		log.Error(err)
+		return nil, err
+	}
+	return &protocol.ClosePositionResponse{}, nil
+}
+
+func (s *Server) SetBalance(ctx context.Context, request *protocol.SetBalanceRequest) (*protocol.SetBalanceResponse, error) {
+	err := s.srv.SetBalance(request.UserId, request.Sum)
+	if err != nil {
+		return nil, err
+	}
+	return &protocol.SetBalanceResponse{}, nil
+}
+
+func (s *Server) GetBalance(ctx context.Context, request *protocol.GetBalanceRequest) (*protocol.GetBalanceResponse, error) {
+	balance := s.srv.GetBalance(request.UserId)
+	return &protocol.GetBalanceResponse{Sum: balance}, nil
 }

@@ -2,218 +2,207 @@
 package service
 
 import (
+	"errors"
+	"fmt"
 	"github.com/chucky-1/broker/internal/model"
 	"github.com/chucky-1/broker/internal/repository"
 	"github.com/chucky-1/broker/internal/request"
-	"github.com/chucky-1/broker/protocol"
 	log "github.com/sirupsen/logrus"
-
-	"errors"
-	"fmt"
-	"strconv"
 	"time"
 )
 
 // Service is unique for each user
 type Service struct {
 	rep       *repository.Repository
-	user      *model.User
-	grpcID    string
-	positions map[int32]*model.Position // map[model.Position.ID]*model.Position
-	count     map[int32]int             // map[stock.ID]count. It is the total number of shares for different positions
-	stocks    map[int32]*protocol.Stock // map[stock.ID]*stock. Ih has the current stocks
-	ch        chan *protocol.Stock      // Current prices come here
-	chnPos    chan *request.Position
+	users     map[int32]*model.User
+	chPrice   chan *model.Price
+	prices    map[int32]*model.Price    // map[price.ID]*price
+	positions map[int32]*model.Position // map[position.ID]*position
+	allPositionsBySymbol map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
+	symbols   map[int32]*model.Symbol
 }
 
 // NewService is constructor
-func NewService(rep *repository.Repository, userID int32, grpcID string, deposit float32, chnPos chan *request.Position) (*Service, error) {
+func NewService(rep *repository.Repository, chPrice chan *model.Price, symbols map[int32]*model.Symbol) (*Service, error) {
 	s := Service{
-		rep:    rep,
-		grpcID: grpcID,
-		count:  make(map[int32]int),
-		stocks: make(map[int32]*protocol.Stock),
-		ch:     make(chan *protocol.Stock),
-		chnPos: chnPos,
+		rep: rep,
+		users: make(map[int32]*model.User),
+		chPrice: chPrice,
+		prices: make(map[int32]*model.Price),
+		positions: make(map[int32]*model.Position),
+		allPositionsBySymbol: make(map[int32]map[int32]*model.Position),
+		symbols: symbols,
 	}
 	go func() {
-		for stock := range s.ch {
-			s.stocks[stock.Id] = stock
+		for {
+			price := <- chPrice
+			s.prices[price.ID] = price
+			go func() {
+				for _, position := range s.allPositionsBySymbol[price.ID] {
+					pnl := s.pnl(position.ID)
+					log.Infof("pnl for position %d is %f", position.ID, pnl)
+					p, ok := stopLoss(position, s.prices[position.ID])
+					if ok {
+						err := s.rep.ClosePosition(&request.ClosePosition{
+							ID:         position.ID,
+							PriceClose: p,
+						})
+						if err != nil {
+							log.Error(err)
+						}
+					}
+					p, ok = takeProfit(position, s.prices[position.ID])
+					if ok {
+						err := s.rep.ClosePosition(&request.ClosePosition{
+							ID:         position.ID,
+							PriceClose: p,
+						})
+						if err != nil {
+							log.Error(err)
+						}
+					}
+				}
+			}()
 		}
 	}()
-
-	var user *model.User
-	user, err := s.rep.SignIn(userID)
-	if err != nil {
-		if err.Error() == "no rows in result set" {
-			user, err = s.rep.CreateUser(deposit)
-			if err != nil {
-				return nil, errors.New("initialization error")
-			}
-		} else {
-			return nil, errors.New("initialization error")
-		}
-	}
-	s.user = user
-
-	positions, err := s.rep.GetOpenPositions(s.user.ID)
+	users, err := s.rep.GetAllUsers()
 	if err != nil {
 		return nil, err
 	}
-	s.positions = positions
-	for _, position := range s.positions {
-		num, ok := s.count[position.StockID]
+	for _, user := range users {
+		s.users[user.ID] = user
+	}
+	positions, err := s.rep.GetAllOpenPositions()
+	if err != nil {
+		return nil, err
+	}
+	for _, position := range positions {
+		s.positions[position.ID] = position
+		allPositions, ok := s.allPositionsBySymbol[position.SymbolID]
 		if !ok {
-			s.count[position.StockID] = 1
+			s.allPositionsBySymbol[position.SymbolID] = make(map[int32]*model.Position)
+			s.allPositionsBySymbol[position.SymbolID][position.ID] = position
 		} else {
-			num++
+			allPositions[position.ID] = position
 		}
 	}
 	return &s, nil
 }
 
-// CreateUser creates a new user
-func (s *Service) CreateUser(deposit float32) (*model.User, error) {
-	return s.rep.CreateUser(deposit)
+func (s *Service) SignUp(deposit float32) (int32, error) {
+	user, err := s.rep.SignUp(deposit)
+	if err != nil {
+		return 0, err
+	}
+	s.users[user.ID] = user
+	return user.ID, nil
 }
 
-// SignIn returns user
-func (s *Service) SignIn(id int32) (*model.User, error) {
-	return s.rep.SignIn(id)
+func (s *Service) SignIn() {
+	return
 }
 
-// Open creates a new position
-func (s *Service) Open(stockID, count int32, stopLoss, takeProfit float32) (int32, error) {
-	_, ok := s.stocks[stockID]
-	if !ok {
-		return 0, fmt.Errorf("stock with id %d didn't find", stockID)
+func (s *Service) OpenPosition(r *request.OpenPositionService) (int32, error) {
+	var price float32
+	if r.IsBuy == true {
+		price = s.prices[r.SymbolID].Bid
+	} else {
+		price = s.prices[r.SymbolID].Ask
 	}
-	position := model.Position{
-		UserID:     s.user.ID,
-		StockID:    stockID,
-		StockTitle: s.stocks[stockID].Title,
-		Count:      count,
-		PriceOpen:  s.stocks[stockID].Price,
-		StopLoss:   stopLoss,
-		TakeProfit: takeProfit,
-	}
-	currentBalance := s.GetBalance()
-	sum := position.PriceOpen * float32(count)
-	ok = s.checkTransaction(currentBalance, sum)
+	currentBalance := s.users[r.UserID].Balance
+	sum := price * float32(r.Count)
+	ok := s.checkTransaction(currentBalance, sum)
 	if !ok {
 		return 0, errors.New("not enough money")
 	}
-	err := s.rep.ChangeBalance(s.user.ID, -sum)
+	err := s.rep.ChangeBalance(r.UserID, -sum)
 	if err != nil {
 		return 0, err
 	}
-	s.user.Balance -= sum
-	t, err := getTime(s.stocks[stockID].Update)
-	if err != nil {
-		log.Error(err)
-	}
+	s.users[r.UserID].Balance -= sum
 
-	id, err := s.rep.Open(&position, t)
+	t := time.Now()
+
+	id, err := s.rep.OpenPosition(&request.OpenPositionRepository{
+		UserID:      r.UserID,
+		SymbolID:    r.SymbolID,
+		SymbolTitle: s.symbols[r.SymbolID].Title,
+		Count:       r.Count,
+		PriceOpen:   price,
+		StopLoss:    r.StopLoss,
+		TakeProfit:  r.TakeProfit,
+		IsBuy:       r.IsBuy,
+	}, t)
 	if err != nil {
-		s.user.Balance += sum
-		err = s.rep.ChangeBalance(s.user.ID, sum)
+		s.users[r.UserID].Balance += sum
+		err = s.rep.ChangeBalance(s.users[r.UserID].ID, sum)
 		if err != nil {
 			log.Error(err)
 		}
 		return 0, err
 	}
 
-	position.ID = id
+	position := model.Position {
+		ID: id,
+		UserID: r.UserID,
+		SymbolID: r.SymbolID,
+		SymbolTitle: "",
+		Count: r.Count,
+		PriceOpen: price,
+		TimeOpen: t,
+		StopLoss: r.StopLoss,
+		TakeProfit: r.TakeProfit,
+		IsBuy: r.IsBuy,
+	}
 	s.positions[id] = &position
-	num, ok := s.count[position.StockID]
-	if !ok {
-		s.count[position.StockID] = 1
-	} else {
-		num++
-	}
-
-	s.chnPos <- &request.Position{
-		Act:        "OPEN",
-		PositionID: position.ID,
-		StockID:    position.StockID,
-		UserID:     position.UserID,
-		Count:      position.Count,
-		Price:      position.PriceOpen,
-		StopLoss:   stopLoss,
-		TakeProfit: takeProfit,
-	}
-	return position.ID, nil
+	return id, nil
 }
 
-// Close closes the position
-func (s *Service) Close(positionID int32) error {
-	_, ok := s.positions[positionID]
+func (s *Service) ClosePosition(positionID int32) error {
+	position, ok := s.positions[positionID]
 	if !ok {
 		return fmt.Errorf("you did not open a position with id %d", positionID)
 	}
-	position := request.ClosePosition{
-		ID:         positionID,
-		PriceClose: s.stocks[s.positions[positionID].StockID].Price,
+	var price float32
+	if position.IsBuy == true {
+		price = s.prices[position.SymbolID].Ask
+	} else {
+		price = s.prices[position.SymbolID].Bid
 	}
-	sum := position.PriceClose * float32(s.positions[positionID].Count)
-	err := s.rep.ChangeBalance(s.user.ID, sum)
+	closePosition := request.ClosePosition{
+		ID:         positionID,
+		PriceClose: price,
+	}
+	sum := price * float32(position.Count)
+	err := s.rep.ChangeBalance(s.users[position.UserID].ID, sum)
 	if err != nil {
 		return err
 	}
-	s.user.Balance += sum
-	err = s.rep.Close(&position)
+	s.users[position.UserID].Balance += sum
+	err = s.rep.ClosePosition(&closePosition)
 	if err != nil {
-		s.user.Balance -= sum
-		err = s.rep.ChangeBalance(s.user.ID, -sum)
+		s.users[position.UserID].Balance -= sum
+		err = s.rep.ChangeBalance(s.users[position.UserID].ID, -sum)
 		if err != nil {
 			log.Error(err)
 		}
 		return err
 	}
-
-	stockID := s.positions[positionID].StockID
-	num := s.count[stockID]
-	if num == 1 {
-		delete(s.count, stockID)
-	} else {
-		num--
-	}
 	delete(s.positions, positionID)
-	s.chnPos <- &request.Position{
-		Act:        "CLOSE",
-		PositionID: position.ID,
-		StockID:    stockID,
-		//Count:    s.positions[positionID].Count,
-		Price:      position.PriceClose,
-	}
 	return nil
 }
 
-// GetBalance returns user's balance
-func (s *Service) GetBalance() float32 {
-	return s.user.Balance
+func (s *Service) SetBalance(userID int32, sum float32) error {
+	err := s.rep.ChangeBalance(userID, sum)
+	if err != nil {
+		return err
+	}
+	s.users[userID].Balance += sum
+	return nil
 }
 
-// GetCount returns the count
-func (s *Service) GetCount() map[int32]int {
-	return s.count
-}
-
-// GetChan returns the chan
-func (s *Service) GetChan() chan *protocol.Stock {
-	return s.ch
-}
-
-// GetUser returns the user
-func (s *Service) GetUser() *model.User {
-	return s.user
-}
-
-// pnl is Profit and loss. Shows how much you earned or lost
-func (s *Service) pnl(positionID int32) float32 {
-	position := s.positions[positionID]
-	stock := s.stocks[position.StockID]
-	return stock.Price * float32(position.Count) - position.PriceOpen * float32(position.Count)
+func (s *Service) GetBalance(userID int32) float32 {
+	return s.users[userID].Balance
 }
 
 // Return true if enough money and false if not enough money
@@ -221,12 +210,23 @@ func (s *Service) checkTransaction(balance, sum float32) bool {
 	return balance - sum >= 0
 }
 
-// getTime formats a string to a date. String from Redis ID
-func getTime(id string) (time.Time, error) {
-	mkr, err := strconv.Atoi(id)
-	if err != nil {
-		return time.Time{}, err
+// pnl is Profit and loss. Shows how much you earned or lost
+func (s *Service) pnl(positionID int32) float32 {
+	position := s.positions[positionID]
+	price := s.prices[position.ID]
+	return price.Bid * float32(position.Count) - position.PriceOpen * float32(position.Count)
+}
+
+func stopLoss(position *model.Position, price *model.Price) (float32, bool) {
+	if position.IsBuy == true {
+		return price.Ask, price.Ask <= position.StopLoss
 	}
-	t := time.Unix(int64(mkr)/1000, 0)
-	return t, nil
+	return price.Bid, price.Bid >= position.StopLoss
+}
+
+func takeProfit(position *model.Position, price *model.Price) (float32, bool) {
+	if position.IsBuy == true {
+		return price.Ask, price.Ask >= position.TakeProfit
+	}
+	return price.Bid, price.Bid <= position.TakeProfit
 }
