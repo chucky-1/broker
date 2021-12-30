@@ -17,6 +17,7 @@ type OpenPositionRepository struct {
 type OpenPositionService struct {
 	UserID     int32
 	SymbolID   int32
+	Price      float32
 	Count      int32
 	StopLoss   float32
 	TakeProfit float32

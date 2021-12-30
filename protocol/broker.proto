@@ -30,10 +30,11 @@ message SignInResponse {}
 message OpenPositionRequest {
   int32 user_id = 1;
   int32 symbol_id = 2;
-  int32 count = 3;
-  float stop_loss = 4;
-  float take_profit = 5;
-  bool is_buy = 6;
+  float price = 3;
+  int32 count = 4;
+  float stop_loss = 5;
+  float take_profit = 6;
+  bool is_buy = 7;
 }
 
 message OpenPositionResponse {

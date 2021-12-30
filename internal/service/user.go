@@ -7,19 +7,16 @@ import (
 
 	"context"
 	"errors"
-	"fmt"
 	"time"
 )
 
 type User struct {
-	srv       *Service
-	id        int32
-	balance   float32
-	chPrice   chan *model.Price
-	prices    map[int32]*model.Price    // map[price.ID]*price
-	positions map[int32]*model.Position // map[position.ID]*position
-	allPositionsBySymbol map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
-	chPosByUser          chan *request.PositionByUser
+	srv     *Service
+	id      int32
+	balance float32
+	chPrice chan *model.Price
+	positions map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
+	chPosByUser chan *request.PositionByUser
 }
 
 func NewUser(ctx context.Context, srv *Service, id int32, balance float32, chPosByUser chan *request.PositionByUser) (*User, error) {
@@ -28,9 +25,7 @@ func NewUser(ctx context.Context, srv *Service, id int32, balance float32, chPos
 		id: id,
 		balance: balance,
 		chPrice: make(chan *model.Price),
-		prices: make(map[int32]*model.Price),
-		positions: make(map[int32]*model.Position),
-		allPositionsBySymbol: make(map[int32]map[int32]*model.Position),
+		positions: make(map[int32]map[int32]*model.Position),
 		chPosByUser: chPosByUser,
 	}
 
@@ -41,11 +36,10 @@ func NewUser(ctx context.Context, srv *Service, id int32, balance float32, chPos
 		return nil, err
 	}
 	for _, position := range positions {
-		u.positions[position.ID] = position
-		allPositions, ok := u.allPositionsBySymbol[position.SymbolID]
+		allPositions, ok := u.positions[position.SymbolID]
 		if !ok {
-			u.allPositionsBySymbol[position.SymbolID] = make(map[int32]*model.Position)
-			u.allPositionsBySymbol[position.SymbolID][position.ID] = position
+			u.positions[position.SymbolID] = make(map[int32]*model.Position)
+			u.positions[position.SymbolID][position.ID] = position
 		} else {
 			allPositions[position.ID] = position
 		}
@@ -62,18 +56,17 @@ func NewUser(ctx context.Context, srv *Service, id int32, balance float32, chPos
 			case <- ctx.Done():
 				return
 			case price := <- u.chPrice:
-				u.prices[price.ID] = price
-				for _, position := range u.allPositionsBySymbol[price.ID] {
-					pnl, err := u.pnl(position.ID)
+				for _, position := range u.positions[price.ID] {
+					p, err := pnl(position, price)
 					if err != nil {
 						log.Error(err)
 						continue
 					}
-					log.Infof("pnl for position %d is %f", position.ID, pnl)
-					if stopLoss(position, u.prices[position.SymbolID]) {
+					log.Infof("pnl for position %d is %f", position.ID, p)
+					if stopLoss(position, price) {
 						u.close(position.ID)
 					}
-					if takeProfit(position, u.prices[position.SymbolID]) {
+					if takeProfit(position, price) {
 						u.close(position.ID)
 					}
 				}
@@ -86,9 +79,21 @@ func NewUser(ctx context.Context, srv *Service, id int32, balance float32, chPos
 func (u *User) OpenPosition(ctx context.Context, r *request.OpenPositionService) (int32, error) {
 	var price float32
 	if r.IsBuy == true {
-		price = u.prices[r.SymbolID].Bid
+		u.srv.muPrices.RLock()
+		price = u.srv.prices[r.SymbolID].Bid
+		u.srv.muPrices.RUnlock()
+		ok := checkPrice(price, r.Price, r.IsBuy)
+		if !ok {
+			return 0, errors.New("price changed. Try again")
+		}
 	} else {
-		price = u.prices[r.SymbolID].Ask
+		u.srv.muPrices.RLock()
+		price = u.srv.prices[r.SymbolID].Ask
+		u.srv.muPrices.RUnlock()
+		ok := checkPrice(price, r.Price, r.IsBuy)
+		if !ok {
+			return 0, errors.New("price changed. Try again")
+		}
 	}
 	currentBalance := u.balance
 	sum := price * float32(r.Count)
@@ -145,11 +150,10 @@ func (u *User) OpenPosition(ctx context.Context, r *request.OpenPositionService)
 		TakeProfit: r.TakeProfit,
 		IsBuy: r.IsBuy,
 	}
-	u.positions[id] = &position
-	allPositions, ok := u.allPositionsBySymbol[position.SymbolID]
+	allPositions, ok := u.positions[position.SymbolID]
 	if !ok {
-		u.allPositionsBySymbol[position.SymbolID] = make(map[int32]*model.Position)
-		u.allPositionsBySymbol[position.SymbolID][position.ID] = &position
+		u.positions[position.SymbolID] = make(map[int32]*model.Position)
+		u.positions[position.SymbolID][position.ID] = &position
 	} else {
 		allPositions[position.ID] = &position
 	}
@@ -162,15 +166,21 @@ func (u *User) OpenPosition(ctx context.Context, r *request.OpenPositionService)
 }
 
 func (u *User) ClosePosition(ctx context.Context, positionID int32) error {
-	position, ok := u.positions[positionID]
-	if !ok {
-		return fmt.Errorf("you did not open a position with id %d", positionID)
+	u.srv.muRep.Lock()
+	position, err := u.srv.rep.GetPosition(ctx, positionID)
+	u.srv.muRep.Unlock()
+	if err != nil {
+		return err
 	}
 	var price float32
 	if position.IsBuy == true {
-		price = u.prices[position.SymbolID].Ask
+		u.srv.muPrices.RLock()
+		price = u.srv.prices[position.SymbolID].Ask
+		u.srv.muPrices.RUnlock()
 	} else {
-		price = u.prices[position.SymbolID].Bid
+		u.srv.muPrices.RLock()
+		price = u.srv.prices[position.SymbolID].Bid
+		u.srv.muPrices.RUnlock()
 	}
 	closePosition := request.ClosePosition{
 		ID:         positionID,
@@ -178,7 +188,7 @@ func (u *User) ClosePosition(ctx context.Context, positionID int32) error {
 	}
 	sum := price * float32(position.Count)
 	u.srv.muRep.Lock()
-	err := u.srv.rep.ChangeBalance(ctx, u.id, sum)
+	err = u.srv.rep.ChangeBalance(ctx, u.id, sum)
 	u.srv.muRep.Unlock()
 	if err != nil {
 		return err
@@ -197,8 +207,7 @@ func (u *User) ClosePosition(ctx context.Context, positionID int32) error {
 		}
 		return err
 	}
-	delete(u.positions, positionID)
-	delete(u.allPositionsBySymbol[position.SymbolID], positionID)
+	delete(u.positions[position.SymbolID], positionID)
 	u.chPosByUser <- &request.PositionByUser{
 		Action:     "DEL",
 		UserID:     u.id,
@@ -237,25 +246,27 @@ func (u *User) close(positionID int32) {
 }
 
 // pnl is Profit and loss. Shows how much you earned or lost
-func (u *User) pnl(positionID int32) (float32, error) {
-	position := u.positions[positionID]
-	price, ok := u.prices[position.SymbolID]
-	if !ok {
-		return 0, fmt.Errorf("pnl for position %d failed. isn't price. User is %d", positionID, u.id)
-	}
+func pnl(position *model.Position, price *model.Price) (float32, error) {
 	return price.Bid * float32(position.Count) - position.PriceOpen * float32(position.Count), nil
 }
 
 func stopLoss(position *model.Position, price *model.Price) bool {
-	if position.IsBuy == true {
+	if position.IsBuy {
 		return price.Ask <= position.StopLoss
 	}
 	return price.Bid >= position.StopLoss
 }
 
 func takeProfit(position *model.Position, price *model.Price) bool {
-	if position.IsBuy == true {
+	if position.IsBuy {
 		return price.Ask >= position.TakeProfit
 	}
 	return price.Bid <= position.TakeProfit
+}
+
+func checkPrice(priceActual, priceWait float32, isBuy bool) bool {
+	if isBuy {
+		return priceWait >= priceActual
+	}
+	return priceWait <= priceActual
 }

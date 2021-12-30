@@ -78,6 +78,18 @@ func (r *Repository) ClosePosition(ctx context.Context, position *request.CloseP
 	return nil
 }
 
+func (r *Repository) GetPosition(ctx context.Context, positionID int32) (*model.Position, error) {
+	var position model.Position
+	err := r.conn.QueryRow(ctx, "SELECT id, user_id, symbol_id, symbol_title, count, price_open, time_open, " +
+		"stop_loss, take_profit, is_buy FROM positions WHERE id = $1", positionID).Scan(&position.ID, &position.UserID,
+			&position.SymbolID, &position.SymbolTitle, &position.Count, &position.PriceOpen, &position.TimeOpen,
+			&position.StopLoss, &position.TakeProfit, &position.IsBuy)
+	if err != nil {
+		return nil, err
+	}
+	return &position, nil
+}
+
 // GetOpenPositions returns all open positions for the certain user
 func (r *Repository) GetOpenPositions(userID int32) (map[int32]*model.Position, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

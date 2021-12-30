@@ -38,6 +38,7 @@ func (s *Server) OpenPosition(ctx context.Context, r *protocol.OpenPositionReque
 	positionID, err := s.srv.OpenPosition(ctx, &request.OpenPositionService{
 		UserID:     r.UserId,
 		SymbolID:   r.SymbolId,
+		Price:      r.Price,
 		Count:      r.Count,
 		StopLoss:   r.StopLoss,
 		TakeProfit: r.TakeProfit,
@@ -51,6 +52,9 @@ func (s *Server) OpenPosition(ctx context.Context, r *protocol.OpenPositionReque
 			return nil, err
 		}
 		if err.Error() == "not enough money" {
+			return nil, err
+		}
+		if err.Error() == "price changed. Try again" {
 			return nil, err
 		}
 		log.Error(err)

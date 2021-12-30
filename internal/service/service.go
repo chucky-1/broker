@@ -25,6 +25,8 @@ type Service struct {
 	positionByUser map[int32]int32 // map[position.ID]user.ID
 	chPosByUser    chan *request.PositionByUser
 	chPrice        chan *model.Price
+	muPrices       sync.RWMutex
+	prices         map[int32]*model.Price
 }
 
 // NewService is constructor
@@ -35,7 +37,8 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 		users:          make(map[int32]*User),
 		positionByUser: make(map[int32]int32),
 		chPosByUser:    make(chan *request.PositionByUser),
-		chPrice: chPrice,
+		chPrice:        chPrice,
+		prices:         make(map[int32]*model.Price),
 	}
 	go func(ctx context.Context) {
 		for {
@@ -43,6 +46,9 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 			case <- ctx.Done():
 				return
 			case price := <- chPrice:
+				s.muPrices.Lock()
+				s.prices[price.ID] = price
+				s.muPrices.Unlock()
 				for _, user := range s.users {
 					user.chPrice <- price
 				}
