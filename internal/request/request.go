@@ -28,3 +28,9 @@ type ClosePosition struct {
 	ID         int32
 	PriceClose float32
 }
+
+type PositionByUser struct {
+	Action     string
+	UserID     int32
+	PositionID int32
+}

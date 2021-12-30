@@ -23,7 +23,7 @@ func NewServer(srv *service.Service) *Server {
 }
 
 func (s *Server)SignUp(ctx context.Context, r *protocol.SignUpRequest) (*protocol.SignUpResponse, error) {
-	id, err := s.srv.SignUp(r.Deposit)
+	id, err := s.srv.SignUp(ctx, r.Deposit)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func (s *Server)SignIn(ctx context.Context, r *protocol.SignInRequest) (*protoco
 }
 
 func (s *Server) OpenPosition(ctx context.Context, r *protocol.OpenPositionRequest) (*protocol.OpenPositionResponse, error) {
-	positionID, err := s.srv.OpenPosition(&request.OpenPositionService{
+	positionID, err := s.srv.OpenPosition(ctx, &request.OpenPositionService{
 		UserID:     r.UserId,
 		SymbolID:   r.SymbolId,
 		Count:      r.Count,
@@ -44,6 +44,9 @@ func (s *Server) OpenPosition(ctx context.Context, r *protocol.OpenPositionReque
 		IsBuy:      r.IsBuy,
 	})
 	if err != nil {
+		if err.Error() == "user didn't find. Please, sign up" {
+			return nil, err
+		}
 		if err.Error() == fmt.Sprintf("symbol with id %d didn't find", r.SymbolId) {
 			return nil, err
 		}
@@ -57,7 +60,7 @@ func (s *Server) OpenPosition(ctx context.Context, r *protocol.OpenPositionReque
 }
 
 func (s *Server) ClosePosition(ctx context.Context, request *protocol.ClosePositionRequest) (*protocol.ClosePositionResponse, error) {
-	err := s.srv.ClosePosition(request.PositionId)
+	err := s.srv.ClosePosition(ctx, request.PositionId)
 	if err != nil {
 		if err.Error() == fmt.Sprintf("you did not open a position with id %d", request.PositionId) {
 			return nil, err
@@ -69,7 +72,7 @@ func (s *Server) ClosePosition(ctx context.Context, request *protocol.ClosePosit
 }
 
 func (s *Server) SetBalance(ctx context.Context, request *protocol.SetBalanceRequest) (*protocol.SetBalanceResponse, error) {
-	err := s.srv.SetBalance(request.UserId, request.Sum)
+	err := s.srv.SetBalance(ctx, request.UserId, request.Sum)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +80,6 @@ func (s *Server) SetBalance(ctx context.Context, request *protocol.SetBalanceReq
 }
 
 func (s *Server) GetBalance(ctx context.Context, request *protocol.GetBalanceRequest) (*protocol.GetBalanceResponse, error) {
-	balance := s.srv.GetBalance(request.UserId)
+	balance := s.srv.GetBalance(ctx, request.UserId)
 	return &protocol.GetBalanceResponse{Sum: balance}, nil
 }

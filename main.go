@@ -54,8 +54,9 @@ func main() {
 	}
 	ch := make(chan *model.Price) // this chan is listened in main.go
 	chSrv := make(chan *model.Price) // this chan is listened in service.go
+	ctx := context.Background()
 	rep := repository.NewRepository(conn)
-	srv, err := service.NewService(rep, chSrv, symbols)
+	srv, err := service.NewService(ctx, rep, chSrv, symbols)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func main() {
 					Ask:  price.Ask,
 					Time: price.Update.Seconds,
 				}
-				//ch <- s
+				// ch <- s
 				chSrv <- s
 			}
 		}

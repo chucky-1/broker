@@ -22,9 +22,7 @@ func NewRepository(conn *pgx.Conn) *Repository {
 }
 
 // SignUp func creates new user
-func (r *Repository) SignUp(deposit float32) (*model.User, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+func (r *Repository) SignUp(ctx context.Context, deposit float32) (*model.User, error) {
 	var id int32
 	err := r.conn.QueryRow(ctx, "INSERT INTO users (id, balance) VALUES (nextval('users_sequence'), $1) RETURNING id",
 		deposit).Scan(&id)
@@ -47,9 +45,7 @@ func (r *Repository) SignIn(id int32) (*model.User, error) {
 }
 
 // OpenPosition func opens position. Returns id of position, error
-func (r *Repository) OpenPosition(position *request.OpenPositionRepository, t time.Time) (int32, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+func (r *Repository) OpenPosition(ctx context.Context, position *request.OpenPositionRepository, t time.Time) (int32, error) {
 	rows, err := r.conn.Query(ctx, "INSERT INTO positions (id, user_id, symbol_id, symbol_title, count, price_open, " +
 		"time_open, price_close, time_close, stop_loss, take_profit, is_buy) " +
 		"VALUES (nextval('positions_sequence'), $1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8, $9) RETURNING id;",
@@ -70,9 +66,7 @@ func (r *Repository) OpenPosition(position *request.OpenPositionRepository, t ti
 }
 
 // ClosePosition func closes position
-func (r *Repository) ClosePosition(position *request.ClosePosition) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+func (r *Repository) ClosePosition(ctx context.Context, position *request.ClosePosition) error {
 	commandTag, err := r.conn.Exec(ctx, "UPDATE positions SET price_close = $1, time_close = CURRENT_TIMESTAMP " +
 		"WHERE id = $2", position.PriceClose, position.ID)
 	if err != nil {
@@ -158,9 +152,7 @@ func (r *Repository) GetAllUsers() (map[int32]*model.User, error) {
 }
 
 // ChangeBalance changes user's balance
-func (r *Repository) ChangeBalance(userID int32, sum float32) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+func (r *Repository) ChangeBalance(ctx context.Context, userID int32, sum float32) error {
 	commandTag, err := r.conn.Exec(ctx, "UPDATE users SET balance = balance + $1 where id = $2", sum, userID)
 	if err != nil {
 		return err
