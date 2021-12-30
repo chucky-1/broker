@@ -11,22 +11,20 @@ import (
 )
 
 type User struct {
-	srv     *Service
-	id      int32
-	balance float32
-	chPrice chan *model.Price
-	positions map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
-	chPosByUser chan *request.PositionByUser
+	srv         *Service
+	id          int32
+	balance     float32
+	chPrice     chan *model.Price
+	positions   map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
 }
 
-func NewUser(ctx context.Context, srv *Service, id int32, balance float32, chPosByUser chan *request.PositionByUser) (*User, error) {
+func NewUser(ctx context.Context, srv *Service, id int32, balance float32) (*User, error) {
 	u := User{
-		srv: srv,
-		id: id,
-		balance: balance,
-		chPrice: make(chan *model.Price),
-		positions: make(map[int32]map[int32]*model.Position),
-		chPosByUser: chPosByUser,
+		srv:         srv,
+		id:          id,
+		balance:     balance,
+		chPrice:     make(chan *model.Price),
+		positions:   make(map[int32]map[int32]*model.Position),
 	}
 
 	srv.muRep.Lock()
@@ -42,11 +40,6 @@ func NewUser(ctx context.Context, srv *Service, id int32, balance float32, chPos
 			u.positions[position.SymbolID][position.ID] = position
 		} else {
 			allPositions[position.ID] = position
-		}
-		chPosByUser <- &request.PositionByUser{
-			Action:     "ADD",
-			UserID:     u.id,
-			PositionID: position.ID,
 		}
 	}
 
@@ -157,11 +150,6 @@ func (u *User) OpenPosition(ctx context.Context, r *request.OpenPositionService)
 	} else {
 		allPositions[position.ID] = &position
 	}
-	u.chPosByUser <- &request.PositionByUser{
-		Action:     "ADD",
-		UserID:     u.id,
-		PositionID: position.ID,
-	}
 	return id, nil
 }
 
@@ -208,11 +196,6 @@ func (u *User) ClosePosition(ctx context.Context, positionID int32) error {
 		return err
 	}
 	delete(u.positions[position.SymbolID], positionID)
-	u.chPosByUser <- &request.PositionByUser{
-		Action:     "DEL",
-		UserID:     u.id,
-		PositionID: positionID,
-	}
 	return nil
 }
 

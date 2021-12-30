@@ -5,6 +5,7 @@ import (
 	"github.com/chucky-1/broker/internal/model"
 	"github.com/chucky-1/broker/internal/request"
 	"github.com/jackc/pgx/v4"
+	log "github.com/sirupsen/logrus"
 
 	"context"
 	"errors"
@@ -161,6 +162,16 @@ func (r *Repository) GetAllUsers() (map[int32]*model.User, error) {
 		users[user.ID] = &user
 	}
 	return users, nil
+}
+
+func (r *Repository) GetUserIDByPositionID(ctx context.Context, positionID int32) (int32, error) {
+	var userID int32
+	err := r.conn.QueryRow(ctx, "SELECT user_id FROM positions WHERE id = $1", positionID).Scan(&userID)
+	if err != nil {
+		log.Error(err)
+		return 0, err
+	}
+	return userID, nil
 }
 
 // ChangeBalance changes user's balance

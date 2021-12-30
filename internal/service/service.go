@@ -21,9 +21,6 @@ type Service struct {
 	symbols        map[int32]*model.Symbol // map[symbol.ID]*symbol
 	muUsers        sync.RWMutex
 	users          map[int32]*User // map[user.ID]*user
-	muPosByUser    sync.RWMutex
-	positionByUser map[int32]int32 // map[position.ID]user.ID
-	chPosByUser    chan *request.PositionByUser
 	chPrice        chan *model.Price
 	muPrices       sync.RWMutex
 	prices         map[int32]*model.Price
@@ -35,8 +32,6 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 		rep:            rep,
 		symbols:        symbols,
 		users:          make(map[int32]*User),
-		positionByUser: make(map[int32]int32),
-		chPosByUser:    make(chan *request.PositionByUser),
 		chPrice:        chPrice,
 		prices:         make(map[int32]*model.Price),
 	}
@@ -55,25 +50,6 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 			}
 		}
 	}(ctx)
-	go func(ctx context.Context) {
-		for {
-			select {
-			case <- ctx.Done():
-				return
-			case positionByUser := <- s.chPosByUser:
-				switch {
-				case positionByUser.Action == "ADD":
-					s.muPosByUser.Lock()
-					s.positionByUser[positionByUser.PositionID] = positionByUser.UserID
-					s.muPosByUser.Unlock()
-				case positionByUser.Action == "DEL":
-					s.muPosByUser.Lock()
-					delete(s.positionByUser, positionByUser.PositionID)
-					s.muPosByUser.Unlock()
-				}
-			}
-		}
-	}(ctx)
 	s.muRep.Lock()
 	users, err := s.rep.GetAllUsers()
 	s.muRep.Unlock()
@@ -81,7 +57,7 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 		return nil, err
 	}
 	for _, user := range users {
-		newUser, err := NewUser(ctx, &s, user.ID, user.Balance, s.chPosByUser)
+		newUser, err := NewUser(ctx, &s, user.ID, user.Balance)
 		if err != nil {
 			log.Error(err)
 		} else {
@@ -100,7 +76,7 @@ func (s *Service) SignUp(ctx context.Context, deposit float32) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-	newUser, err := NewUser(ctx, s, user.ID, user.Balance, s.chPosByUser)
+	newUser, err := NewUser(ctx, s, user.ID, user.Balance)
 	if err != nil {
 		log.Error(err)
 	} else {
@@ -122,10 +98,10 @@ func (s *Service) OpenPosition(ctx context.Context, request *request.OpenPositio
 }
 
 func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
-	s.muPosByUser.RLock()
-	userID, ok := s.positionByUser[positionID]
-	s.muPosByUser.RUnlock()
-	if !ok {
+	s.muRep.Lock()
+	userID, err := s.rep.GetUserIDByPositionID(ctx, positionID)
+	s.muRep.Unlock()
+	if err != nil {
 		return fmt.Errorf("you did not open a position with id %d", positionID)
 	}
 
