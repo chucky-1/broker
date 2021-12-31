@@ -16,25 +16,25 @@ import (
 
 // Service implements business logic
 type Service struct {
-	muRep          sync.Mutex
-	rep            *repository.Repository
-	muSymbols      sync.RWMutex
-	symbols        map[int32]*model.Symbol // map[symbol.ID]*symbol
-	muUsers        sync.RWMutex
-	users          map[int32]*user.User // map[user.ID]*user
-	chPrice        chan *model.Price
-	muPrices       sync.RWMutex
-	prices         map[int32]*model.Price
+	muRep     sync.Mutex
+	rep       *repository.Repository
+	muSymbols sync.RWMutex
+	symbols   map[int32]*model.Symbol // map[symbol.ID]*symbol
+	muUsers   sync.RWMutex
+	users     map[int32]*user.User // map[user.ID]*user
+	chPrice   chan *model.Price
+	muPrices  sync.RWMutex
+	prices    map[int32]*model.Price
 }
 
 // NewService is constructor
 func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *model.Price, symbols map[int32]*model.Symbol) (*Service, error) {
 	s := Service{
-		rep:            rep,
-		symbols:        symbols,
-		users:          make(map[int32]*user.User),
-		chPrice:        chPrice,
-		prices:         make(map[int32]*model.Price),
+		rep:     rep,
+		symbols: symbols,
+		users:   make(map[int32]*user.User),
+		chPrice: chPrice,
+		prices:  make(map[int32]*model.Price),
 	}
 	go func(ctx context.Context) {
 		for {
@@ -70,6 +70,7 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 	return &s, nil
 }
 
+// SignUp implements user registration
 func (s *Service) SignUp(ctx context.Context, deposit float32) (int32, error) {
 	s.muRep.Lock()
 	u, err := s.rep.SignUp(ctx, deposit)
@@ -88,6 +89,7 @@ func (s *Service) SignUp(ctx context.Context, deposit float32) (int32, error) {
 	return u.ID, nil
 }
 
+// OpenPosition opens position for user
 func (s *Service) OpenPosition(ctx context.Context, request *request.OpenPositionService) (int32, error) {
 	s.muUsers.RLock()
 	u, ok := s.users[request.UserID]
@@ -98,6 +100,7 @@ func (s *Service) OpenPosition(ctx context.Context, request *request.OpenPositio
 	return u.OpenPosition(ctx, request)
 }
 
+// ClosePosition closes position for user
 func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 	s.muRep.Lock()
 	userID, err := s.rep.GetUserIDByPositionID(ctx, positionID)
@@ -112,6 +115,7 @@ func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 	return u.ClosePosition(ctx, positionID)
 }
 
+// SetBalance changed balance of user
 func (s *Service) SetBalance(ctx context.Context, userID int32, sum float32) error {
 	s.muUsers.RLock()
 	u := s.users[userID]
@@ -119,6 +123,7 @@ func (s *Service) SetBalance(ctx context.Context, userID int32, sum float32) err
 	return u.SetBalance(ctx, sum)
 }
 
+// GetBalance returns balance of user
 func (s *Service) GetBalance(ctx context.Context, userID int32) float32 {
 	s.muUsers.RLock()
 	u := s.users[userID]
@@ -126,18 +131,22 @@ func (s *Service) GetBalance(ctx context.Context, userID int32) float32 {
 	return u.GetBalance()
 }
 
+// GetRepository returns repository struct
 func (s *Service) GetRepository() (*repository.Repository, *sync.Mutex) {
 	return s.rep, &s.muRep
 }
 
+// GetSymbols returns map with symbols
 func (s *Service) GetSymbols() (map[int32]*model.Symbol, *sync.RWMutex) {
 	return s.symbols, &s.muSymbols
 }
 
+// GetChanPrice returns chan of price
 func (s *Service) GetChanPrice() chan *model.Price {
 	return s.chPrice
 }
 
+// GetPrices returns map with prices
 func (s *Service) GetPrices() (map[int32]*model.Price, *sync.RWMutex) {
 	return s.prices, &s.muPrices
 }
