@@ -50,17 +50,13 @@ func NewUser(ctx context.Context, srv *Service, id int32, balance float32) (*Use
 				return
 			case price := <- u.chPrice:
 				for _, position := range u.positions[price.ID] {
-					p, err := pnl(position, price)
-					if err != nil {
-						log.Error(err)
-						continue
-					}
+					p := pnl(position, price)
 					log.Infof("pnl for position %d is %f", position.ID, p)
 					if stopLoss(position, price) {
-						u.close(position.ID)
+						u.close(ctx, position.ID)
 					}
 					if takeProfit(position, price) {
-						u.close(position.ID)
+						u.close(ctx, position.ID)
 					}
 				}
 			}
@@ -219,9 +215,7 @@ func (u *User) checkTransaction(balance, sum float32) bool {
 	return balance - sum >= 0
 }
 
-func (u *User) close(positionID int32) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+func (u *User) close(ctx context.Context, positionID int32) {
 	err := u.ClosePosition(ctx, positionID)
 	if err != nil {
 		log.Error(err)
@@ -229,8 +223,8 @@ func (u *User) close(positionID int32) {
 }
 
 // pnl is Profit and loss. Shows how much you earned or lost
-func pnl(position *model.Position, price *model.Price) (float32, error) {
-	return price.Bid * float32(position.Count) - position.PriceOpen * float32(position.Count), nil
+func pnl(position *model.Position, price *model.Price) float32 {
+	return price.Bid * float32(position.Count) - position.PriceOpen * float32(position.Count)
 }
 
 func stopLoss(position *model.Position, price *model.Price) bool {
