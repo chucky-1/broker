@@ -1,4 +1,4 @@
-package service
+package user
 
 import (
 	"github.com/chucky-1/broker/internal/model"
