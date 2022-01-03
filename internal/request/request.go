@@ -1,6 +1,8 @@
 // Package request has structs
 package request
 
+import "context"
+
 // OpenPositionRepository stores parameters for opening a position in the repository
 type OpenPositionRepository struct {
 	UserID      int32
@@ -28,4 +30,8 @@ type OpenPositionService struct {
 type ClosePosition struct {
 	ID         int32
 	PriceClose float32
+}
+
+type PositionCloser interface {
+	ClosePosition(ctx context.Context, positionID int32) error
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestService_stopLoss(t *testing.T) {
+func TestUser_stopLoss(t *testing.T) {
 	testTable := []struct {
 		name     string
 		position *model.Position
@@ -71,7 +71,7 @@ func TestService_stopLoss(t *testing.T) {
 	}
 }
 
-func TestService_takeProfit(t *testing.T) {
+func TestUser_takeProfit(t *testing.T) {
 	testTable := []struct {
 		name     string
 		position *model.Position

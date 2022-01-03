@@ -29,7 +29,8 @@ type Service struct {
 }
 
 // NewService is constructor
-func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *model.Price, symbols map[int32]*model.Symbol) (*Service, error) {
+func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *model.Price,
+	symbols map[int32]*model.Symbol) (*Service, error) {
 	s := Service{
 		rep:     rep,
 		symbols: symbols,
@@ -70,7 +71,8 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 				allPositions[position.ID] = position
 			}
 		}
-		newUser, err := user.NewUser(ctx, u.ID, u.Balance, positions, &s.muRep, rep)
+		var closer request.PositionCloser = &s
+		newUser, err := user.NewUser(ctx, u.ID, u.Balance, positions, closer)
 		if err != nil {
 			log.Error(err)
 		} else {
@@ -90,7 +92,8 @@ func (s *Service) SignUp(ctx context.Context, deposit float32) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-	newUser, err := user.NewUser(ctx, u.ID, u.Balance, make(map[int32]map[int32]*model.Position), &s.muRep, s.rep)
+	var closer request.PositionCloser = s
+	newUser, err := user.NewUser(ctx, u.ID, u.Balance, make(map[int32]map[int32]*model.Position), closer)
 	if err != nil {
 		log.Error(err)
 	} else {

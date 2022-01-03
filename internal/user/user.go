@@ -3,7 +3,6 @@ package user
 
 import (
 	"github.com/chucky-1/broker/internal/model"
-	"github.com/chucky-1/broker/internal/repository"
 	"github.com/chucky-1/broker/internal/request"
 	log "github.com/sirupsen/logrus"
 
@@ -13,26 +12,24 @@ import (
 
 // User keeps state each user
 type User struct {
-	muRep     *sync.Mutex
-	rep       *repository.Repository
 	id        int32
 	muBalance sync.RWMutex
 	balance   float32
 	chPrice   chan *model.Price
 	muPos     sync.RWMutex
 	positions map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
+	closer    request.PositionCloser
 }
 
 // NewUser is constructor
 func NewUser(ctx context.Context, id int32, balance float32, positions map[int32]map[int32]*model.Position,
-	muRep *sync.Mutex, rep *repository.Repository) (*User, error) {
+	closer request.PositionCloser) (*User, error) {
 	u := User{
-		muRep:     muRep,
-		rep:       rep,
 		id:        id,
 		balance:   balance,
 		chPrice:   make(chan *model.Price),
 		positions: positions,
+		closer: closer,
 	}
 	go func(ctx context.Context) {
 		for {
@@ -44,13 +41,13 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 					p := pnl(position, price)
 					log.Infof("pnl for position %d is %f", position.ID, p)
 					if stopLoss(position, price) {
-						err := u.ClosePositionWithoutService(ctx, position, price)
+						err := u.closer.ClosePosition(ctx, position.ID)
 						if err != nil {
 							log.Error(err)
 						}
 					}
 					if takeProfit(position, price) {
-						err := u.ClosePositionWithoutService(ctx, position, price)
+						err := u.closer.ClosePosition(ctx, position.ID)
 						if err != nil {
 							log.Error(err)
 						}
@@ -78,45 +75,6 @@ func (u *User) ClosePosition(symbolID, positionID int32) {
 	u.muPos.Lock()
 	delete(u.positions[symbolID], positionID)
 	u.muPos.Unlock()
-}
-
-// ClosePositionWithoutService closes a position in the database
-func (u *User) ClosePositionWithoutService(ctx context.Context, position *model.Position, p *model.Price) error {
-	var price float32
-	if position.IsBuy == true {
-		price = p.Ask
-	} else {
-		price = p.Bid
-	}
-	sum := price * float32(position.Count)
-	u.muRep.Lock()
-	err := u.rep.ChangeBalance(ctx, u.id, sum)
-	u.muRep.Unlock()
-	if err != nil {
-		return err
-	}
-	u.ChangeBalance(sum)
-	u.muRep.Lock()
-	err = u.rep.ClosePosition(ctx, &request.ClosePosition{
-		ID:         position.ID,
-		PriceClose: price,
-	})
-	u.muRep.Unlock()
-	if err != nil {
-		u.ChangeBalance(-sum)
-		u.muRep.Lock()
-		err = u.rep.ChangeBalance(ctx, u.id, -sum)
-		u.muRep.Unlock()
-		if err != nil {
-			log.Error(err)
-		}
-		return err
-	}
-
-	u.muPos.Lock()
-	delete(u.positions[position.SymbolID], position.ID)
-	u.muPos.Unlock()
-	return nil
 }
 
 // GetBalance returns balance
