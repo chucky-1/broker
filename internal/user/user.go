@@ -3,51 +3,37 @@ package user
 
 import (
 	"github.com/chucky-1/broker/internal/model"
+	"github.com/chucky-1/broker/internal/repository"
 	"github.com/chucky-1/broker/internal/request"
-	"github.com/chucky-1/broker/internal/service"
 	log "github.com/sirupsen/logrus"
 
 	"context"
-	"errors"
-	"time"
+	"sync"
 )
 
 // User keeps state each user
 type User struct {
-	srv         *service.Service
-	id          int32
-	balance     float32
-	chPrice     chan *model.Price
-	positions   map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
+	muRep     *sync.Mutex
+	rep       *repository.Repository
+	id        int32
+	muBalance sync.RWMutex
+	balance   float32
+	chPrice   chan *model.Price
+	muPos     sync.RWMutex
+	positions map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
 }
 
 // NewUser is constructor
-func NewUser(ctx context.Context, srv *service.Service, id int32, balance float32) (*User, error) {
+func NewUser(ctx context.Context, id int32, balance float32, positions map[int32]map[int32]*model.Position,
+	muRep *sync.Mutex, rep *repository.Repository) (*User, error) {
 	u := User{
-		srv:         srv,
-		id:          id,
-		balance:     balance,
-		chPrice:     make(chan *model.Price),
-		positions:   make(map[int32]map[int32]*model.Position),
+		muRep:     muRep,
+		rep:       rep,
+		id:        id,
+		balance:   balance,
+		chPrice:   make(chan *model.Price),
+		positions: positions,
 	}
-
-	rep, mu := srv.GetRepository()
-	mu.Lock()
-	positions, err := rep.GetOpenPositions(u.id)
-	mu.Unlock()
-	if err != nil {
-		return nil, err
-	}
-	for _, position := range positions {
-		allPositions, ok := u.positions[position.SymbolID]
-		if !ok {
-			u.positions[position.SymbolID] = make(map[int32]*model.Position)
-			u.positions[position.SymbolID][position.ID] = position
-		} else {
-			allPositions[position.ID] = position
-		}
-	}
-
 	go func(ctx context.Context) {
 		for {
 			select {
@@ -58,10 +44,16 @@ func NewUser(ctx context.Context, srv *service.Service, id int32, balance float3
 					p := pnl(position, price)
 					log.Infof("pnl for position %d is %f", position.ID, p)
 					if stopLoss(position, price) {
-						u.close(ctx, position.ID)
+						err := u.ClosePositionWithoutService(ctx, position, price)
+						if err != nil {
+							log.Error(err)
+						}
 					}
 					if takeProfit(position, price) {
-						u.close(ctx, position.ID)
+						err := u.ClosePositionWithoutService(ctx, position, price)
+						if err != nil {
+							log.Error(err)
+						}
 					}
 				}
 			}
@@ -70,173 +62,75 @@ func NewUser(ctx context.Context, srv *service.Service, id int32, balance float3
 	return &u, nil
 }
 
-// OpenPosition opens position of user
-func (u *User) OpenPosition(ctx context.Context, r *request.OpenPositionService) (int32, error) {
-	var price float32
-	prices, muPrices := u.srv.GetPrices()
-	if r.IsBuy == true {
-		muPrices.RLock()
-		price = prices[r.SymbolID].Bid
-		muPrices.RUnlock()
-		ok := checkPrice(price, r.Price, r.IsBuy)
-		if !ok {
-			return 0, errors.New("price changed. Try again")
-		}
-	} else {
-		muPrices.RLock()
-		price = prices[r.SymbolID].Ask
-		muPrices.RUnlock()
-		ok := checkPrice(price, r.Price, r.IsBuy)
-		if !ok {
-			return 0, errors.New("price changed. Try again")
-		}
-	}
-	currentBalance := u.balance
-	sum := price * float32(r.Count)
-	ok := u.checkTransaction(currentBalance, sum)
-	if !ok {
-		return 0, errors.New("not enough money")
-	}
-
-	rep, muRep :=u.srv.GetRepository()
-	muRep.Lock()
-	err := rep.ChangeBalance(ctx, r.UserID, -sum)
-	muRep.Unlock()
-	if err != nil {
-		return 0, err
-	}
-	u.balance -= sum
-
-	t := time.Now()
-
-	symbols, muSym := u.srv.GetSymbols()
-	muSym.RLock()
-	title := symbols[r.SymbolID].Title
-	muSym.RUnlock()
-
-	muRep.Lock()
-	id, err := rep.OpenPosition(ctx, &request.OpenPositionRepository{
-		UserID:      r.UserID,
-		SymbolID:    r.SymbolID,
-		SymbolTitle: title,
-		Count:       r.Count,
-		PriceOpen:   price,
-		StopLoss:    r.StopLoss,
-		TakeProfit:  r.TakeProfit,
-		IsBuy:       r.IsBuy,
-	}, t)
-	muRep.Unlock()
-	if err != nil {
-		u.balance += sum
-		muRep.Lock()
-		err = rep.ChangeBalance(ctx, u.id, sum)
-		muRep.Unlock()
-		if err != nil {
-			log.Error(err)
-		}
-		return 0, err
-	}
-
-	position := model.Position {
-		ID: id,
-		UserID: r.UserID,
-		SymbolID: r.SymbolID,
-		SymbolTitle: "",
-		Count: r.Count,
-		PriceOpen: price,
-		TimeOpen: t,
-		StopLoss: r.StopLoss,
-		TakeProfit: r.TakeProfit,
-		IsBuy: r.IsBuy,
-	}
+// OpenPosition appends position
+func (u *User) OpenPosition(position *model.Position) {
 	allPositions, ok := u.positions[position.SymbolID]
 	if !ok {
 		u.positions[position.SymbolID] = make(map[int32]*model.Position)
-		u.positions[position.SymbolID][position.ID] = &position
+		u.positions[position.SymbolID][position.ID] = position
 	} else {
-		allPositions[position.ID] = &position
+		allPositions[position.ID] = position
 	}
-	return id, nil
 }
 
-// ClosePosition closes position of user
-func (u *User) ClosePosition(ctx context.Context, positionID int32) error {
-	rep, muRep := u.srv.GetRepository()
-	muRep.Lock()
-	position, err := rep.GetPosition(ctx, positionID)
-	muRep.Unlock()
+// ClosePosition delete position
+func (u *User) ClosePosition(symbolID, positionID int32) {
+	u.muPos.Lock()
+	delete(u.positions[symbolID], positionID)
+	u.muPos.Unlock()
+}
 
-	if err != nil {
-		return err
-	}
+// ClosePositionWithoutService closes a position in the database
+func (u *User) ClosePositionWithoutService(ctx context.Context, position *model.Position, p *model.Price) error {
 	var price float32
-	prices, muPrices := u.srv.GetPrices()
 	if position.IsBuy == true {
-		muPrices.RLock()
-		price = prices[position.SymbolID].Ask
-		muPrices.RUnlock()
+		price = p.Ask
 	} else {
-		muPrices.RLock()
-		price = prices[position.SymbolID].Bid
-		muPrices.RUnlock()
-	}
-	closePosition := request.ClosePosition{
-		ID:         positionID,
-		PriceClose: price,
+		price = p.Bid
 	}
 	sum := price * float32(position.Count)
-	muRep.Lock()
-	err = rep.ChangeBalance(ctx, u.id, sum)
-	muRep.Unlock()
+	u.muRep.Lock()
+	err := u.rep.ChangeBalance(ctx, u.id, sum)
+	u.muRep.Unlock()
 	if err != nil {
 		return err
 	}
-	u.balance += sum
-	muRep.Lock()
-	err = rep.ClosePosition(ctx, &closePosition)
-	muRep.Unlock()
+	u.ChangeBalance(sum)
+	u.muRep.Lock()
+	err = u.rep.ClosePosition(ctx, &request.ClosePosition{
+		ID:         position.ID,
+		PriceClose: price,
+	})
+	u.muRep.Unlock()
 	if err != nil {
-		u.balance -= sum
-		muRep.Lock()
-		err = rep.ChangeBalance(ctx, u.id, -sum)
-		muRep.Unlock()
+		u.ChangeBalance(-sum)
+		u.muRep.Lock()
+		err = u.rep.ChangeBalance(ctx, u.id, -sum)
+		u.muRep.Unlock()
 		if err != nil {
 			log.Error(err)
 		}
 		return err
 	}
-	delete(u.positions[position.SymbolID], positionID)
-	return nil
-}
 
-// SetBalance changes balance of user
-func (u *User) SetBalance(ctx context.Context, sum float32) error {
-	rep, muRep := u.srv.GetRepository()
-	muRep.Lock()
-	err := rep.ChangeBalance(ctx, u.id, sum)
-	muRep.Unlock()
-	if err != nil {
-		return err
-	}
-	u.balance += sum
+	u.muPos.Lock()
+	delete(u.positions[position.SymbolID], position.ID)
+	u.muPos.Unlock()
 	return nil
 }
 
 // GetBalance returns balance
 func (u *User) GetBalance() float32 {
+	u.muBalance.Lock()
+	defer u.muBalance.Unlock()
 	return u.balance
 }
 
-// Return true if enough money and false if not enough money
-func (u *User) checkTransaction(balance, sum float32) bool {
-	return balance - sum >= 0
-}
-
-func (u *User) close(ctx context.Context, positionID int32) {
-	err := u.ClosePosition(ctx, positionID)
-	if err != nil {
-		log.Error(err)
-	}
+// ChangeBalance changes balance in user's struct
+func (u *User) ChangeBalance(sum float32) {
+	u.muBalance.Lock()
+	u.balance += sum
+	u.muBalance.Unlock()
 }
 
 // pnl is Profit and loss. Shows how much you earned or lost
@@ -258,13 +152,6 @@ func takeProfit(position *model.Position, price *model.Price) bool {
 	return price.Bid <= position.TakeProfit
 }
 
-func checkPrice(priceActual, priceWait float32, isBuy bool) bool {
-	if isBuy {
-		return priceWait >= priceActual
-	}
-	return priceWait <= priceActual
-}
-
 // GetID returns id
 func (u *User) GetID() int32 {
 	return u.id
@@ -276,6 +163,6 @@ func (u *User) GetChanPrice() chan *model.Price {
 }
 
 // GetPositions returns positions
-func (u *User) GetPositions() map[int32]map[int32]*model.Position {
-	return u.positions
+func (u *User) GetPositions() (map[int32]map[int32]*model.Position, *sync.RWMutex) {
+	return u.positions, &u.muPos
 }

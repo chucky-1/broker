@@ -7,6 +7,7 @@ import (
 	"github.com/chucky-1/broker/internal/request"
 	"github.com/chucky-1/broker/internal/user"
 	log "github.com/sirupsen/logrus"
+	"time"
 
 	"context"
 	"errors"
@@ -58,7 +59,18 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 		return nil, err
 	}
 	for _, u := range users {
-		newUser, err := user.NewUser(ctx, &s, u.ID, u.Balance)
+		positions := make(map[int32]map[int32]*model.Position)
+		openPositions, err := rep.GetOpenPositions(u.ID)
+		for _, position := range openPositions {
+			allPositions, ok := positions[position.SymbolID]
+			if !ok {
+				positions[position.SymbolID] = make(map[int32]*model.Position)
+				positions[position.SymbolID][position.ID] = position
+			} else {
+				allPositions[position.ID] = position
+			}
+		}
+		newUser, err := user.NewUser(ctx, u.ID, u.Balance, positions, &s.muRep, rep)
 		if err != nil {
 			log.Error(err)
 		} else {
@@ -78,7 +90,7 @@ func (s *Service) SignUp(ctx context.Context, deposit float32) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-	newUser, err := user.NewUser(ctx, s, u.ID, u.Balance)
+	newUser, err := user.NewUser(ctx, u.ID, u.Balance, make(map[int32]map[int32]*model.Position), &s.muRep, s.rep)
 	if err != nil {
 		log.Error(err)
 	} else {
@@ -89,15 +101,91 @@ func (s *Service) SignUp(ctx context.Context, deposit float32) (int32, error) {
 	return u.ID, nil
 }
 
-// OpenPosition opens position for user
-func (s *Service) OpenPosition(ctx context.Context, request *request.OpenPositionService) (int32, error) {
+// OpenPosition opens position for user. Returns id of position
+func (s *Service) OpenPosition(ctx context.Context, r *request.OpenPositionService) (int32, error) {
 	s.muUsers.RLock()
-	u, ok := s.users[request.UserID]
+	u, ok := s.users[r.UserID]
 	s.muUsers.RUnlock()
 	if !ok {
 		return 0, errors.New("user didn't find. Please, sign up")
 	}
-	return u.OpenPosition(ctx, request)
+
+	var price float32
+	if r.IsBuy == true {
+		s.muPrices.RLock()
+		price = s.prices[r.SymbolID].Bid
+		s.muPrices.RUnlock()
+		ok = checkPrice(price, r.Price, r.IsBuy)
+		if !ok {
+			return 0, errors.New("price changed. Try again")
+		}
+	} else {
+		s.muPrices.RLock()
+		price = s.prices[r.SymbolID].Ask
+		s.muPrices.RUnlock()
+		ok = checkPrice(price, r.Price, r.IsBuy)
+		if !ok {
+			return 0, errors.New("price changed. Try again")
+		}
+	}
+	currentBalance := u.GetBalance()
+	sum := price * float32(r.Count)
+	ok = checkTransaction(currentBalance, sum)
+	if !ok {
+		return 0, errors.New("not enough money")
+	}
+
+	s.muRep.Lock()
+	err := s.rep.ChangeBalance(ctx, r.UserID, -sum)
+	s.muRep.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	u.ChangeBalance(-sum)
+
+	t := time.Now()
+
+	s.muSymbols.RLock()
+	title := s.symbols[r.SymbolID].Title
+	s.muSymbols.RUnlock()
+
+	s.muRep.Lock()
+	id, err := s.rep.OpenPosition(ctx, &request.OpenPositionRepository{
+		UserID:      r.UserID,
+		SymbolID:    r.SymbolID,
+		SymbolTitle: title,
+		Count:       r.Count,
+		PriceOpen:   price,
+		StopLoss:    r.StopLoss,
+		TakeProfit:  r.TakeProfit,
+		IsBuy:       r.IsBuy,
+	}, t)
+	s.muRep.Unlock()
+	if err != nil {
+		u.ChangeBalance(sum)
+		s.muRep.Lock()
+		err = s.rep.ChangeBalance(ctx, u.GetID(), sum)
+		s.muRep.Unlock()
+		if err != nil {
+			log.Error(err)
+		}
+		return 0, err
+	}
+
+	position := model.Position {
+		ID: id,
+		UserID: r.UserID,
+		SymbolID: r.SymbolID,
+		SymbolTitle: title,
+		Count: r.Count,
+		PriceOpen: price,
+		TimeOpen: t,
+		StopLoss: r.StopLoss,
+		TakeProfit: r.TakeProfit,
+		IsBuy: r.IsBuy,
+	}
+	u.OpenPosition(&position)
+	return id, nil
 }
 
 // ClosePosition closes position for user
@@ -112,7 +200,50 @@ func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 	s.muUsers.RLock()
 	u := s.users[userID]
 	s.muUsers.RUnlock()
-	return u.ClosePosition(ctx, positionID)
+
+	s.muRep.Lock()
+	position, err := s.rep.GetPosition(ctx, positionID)
+	s.muRep.Unlock()
+	if err != nil {
+		return err
+	}
+
+	var price float32
+	if position.IsBuy == true {
+		s.muPrices.RLock()
+		price = s.prices[position.SymbolID].Ask
+		s.muPrices.RUnlock()
+	} else {
+		s.muPrices.RLock()
+		price = s.prices[position.SymbolID].Bid
+		s.muPrices.RUnlock()
+	}
+	sum := price * float32(position.Count)
+	s.muRep.Lock()
+	err = s.rep.ChangeBalance(ctx, u.GetID(), sum)
+	s.muRep.Unlock()
+	if err != nil {
+		return err
+	}
+	u.ChangeBalance(sum)
+	s.muRep.Lock()
+	err = s.rep.ClosePosition(ctx, &request.ClosePosition{
+		ID:         positionID,
+		PriceClose: price,
+	})
+	s.muRep.Unlock()
+	if err != nil {
+		u.ChangeBalance(-sum)
+		s.muRep.Lock()
+		err = s.rep.ChangeBalance(ctx, u.GetID(), -sum)
+		s.muRep.Unlock()
+		if err != nil {
+			log.Error(err)
+		}
+		return err
+	}
+	u.ClosePosition(position.SymbolID, positionID)
+	return nil
 }
 
 // SetBalance changed balance of user
@@ -120,7 +251,15 @@ func (s *Service) SetBalance(ctx context.Context, userID int32, sum float32) err
 	s.muUsers.RLock()
 	u := s.users[userID]
 	s.muUsers.RUnlock()
-	return u.SetBalance(ctx, sum)
+
+	s.muRep.Lock()
+	err := s.rep.ChangeBalance(ctx, userID, sum)
+	s.muRep.Unlock()
+	if err != nil {
+		return err
+	}
+	u.ChangeBalance(sum)
+	return nil
 }
 
 // GetBalance returns balance of user
@@ -131,22 +270,14 @@ func (s *Service) GetBalance(ctx context.Context, userID int32) float32 {
 	return u.GetBalance()
 }
 
-// GetRepository returns repository struct
-func (s *Service) GetRepository() (*repository.Repository, *sync.Mutex) {
-	return s.rep, &s.muRep
+func checkPrice(priceActual, priceWait float32, isBuy bool) bool {
+	if isBuy {
+		return priceWait >= priceActual
+	}
+	return priceWait <= priceActual
 }
 
-// GetSymbols returns map with symbols
-func (s *Service) GetSymbols() (map[int32]*model.Symbol, *sync.RWMutex) {
-	return s.symbols, &s.muSymbols
-}
-
-// GetChanPrice returns chan of price
-func (s *Service) GetChanPrice() chan *model.Price {
-	return s.chPrice
-}
-
-// GetPrices returns map with prices
-func (s *Service) GetPrices() (map[int32]*model.Price, *sync.RWMutex) {
-	return s.prices, &s.muPrices
+// Return true if enough money and false if not enough money
+func checkTransaction(balance, sum float32) bool {
+	return balance - sum >= 0
 }
