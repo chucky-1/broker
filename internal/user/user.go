@@ -37,6 +37,7 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 			case <- ctx.Done():
 				return
 			case price := <- u.chPrice:
+				u.muPos.RLock()
 				for _, position := range u.positions[price.ID] {
 					p := pnl(position, price)
 					log.Infof("pnl for position %d is %f", position.ID, p)
@@ -53,6 +54,7 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 						}
 					}
 				}
+				u.muPos.RUnlock()
 			}
 		}
 	}(ctx)
@@ -61,6 +63,8 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 
 // OpenPosition appends position
 func (u *User) OpenPosition(position *model.Position) {
+	u.muPos.Lock()
+	defer u.muPos.Unlock()
 	allPositions, ok := u.positions[position.SymbolID]
 	if !ok {
 		u.positions[position.SymbolID] = make(map[int32]*model.Position)
@@ -118,9 +122,4 @@ func (u *User) GetID() int32 {
 // GetChanPrice returns chan of price
 func (u *User) GetChanPrice() chan *model.Price {
 	return u.chPrice
-}
-
-// GetPositions returns positions
-func (u *User) GetPositions() (map[int32]map[int32]*model.Position, *sync.RWMutex) {
-	return u.positions, &u.muPos
 }
