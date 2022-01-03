@@ -1,7 +1,10 @@
 // Package request has structs
 package request
 
-import "context"
+import (
+	"context"
+	"github.com/chucky-1/broker/internal/model"
+)
 
 // OpenPositionRepository stores parameters for opening a position in the repository
 type OpenPositionRepository struct {
@@ -33,5 +36,5 @@ type ClosePosition struct {
 }
 
 type PositionCloser interface {
-	ClosePosition(ctx context.Context, positionID int32) error
+	Close(ctx context.Context, position *model.Position, price float32) error
 }

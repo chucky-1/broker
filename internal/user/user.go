@@ -42,13 +42,13 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 					p := pnl(position, price)
 					log.Infof("pnl for position %d is %f", position.ID, p)
 					if stopLoss(position, price) {
-						err := u.closer.ClosePosition(ctx, position.ID)
+						err := u.close(ctx, position, price)
 						if err != nil {
 							log.Error(err)
 						}
 					}
 					if takeProfit(position, price) {
-						err := u.closer.ClosePosition(ctx, position.ID)
+						err := u.close(ctx, position, price)
 						if err != nil {
 							log.Error(err)
 						}
@@ -93,6 +93,26 @@ func (u *User) ChangeBalance(sum float32) {
 	u.muBalance.Lock()
 	u.balance += sum
 	u.muBalance.Unlock()
+}
+
+func (u *User) close(ctx context.Context, position *model.Position, p *model.Price) error {
+	var price float32
+	if position.IsBuy == true {
+		price = p.Ask
+	} else {
+		price = p.Bid
+	}
+	err := u.closer.Close(ctx, position, price)
+	if err != nil {
+		return err
+	}
+	u.muBalance.Lock()
+	u.balance += price * float32(position.Count)
+	u.muBalance.Unlock()
+	u.muPos.Lock()
+	delete(u.positions[position.SymbolID], position.ID)
+	u.muPos.Unlock()
+	return nil
 }
 
 // pnl is Profit and loss. Shows how much you earned or lost

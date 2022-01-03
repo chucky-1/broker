@@ -249,6 +249,32 @@ func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 	return nil
 }
 
+func (s *Service) Close(ctx context.Context, position *model.Position, price float32) error {
+	sum := price * float32(position.Count)
+	s.muRep.Lock()
+	err := s.rep.ChangeBalance(ctx, position.UserID, sum)
+	s.muRep.Unlock()
+	if err != nil {
+		return err
+	}
+	s.muRep.Lock()
+	err = s.rep.ClosePosition(ctx, &request.ClosePosition{
+		ID:         position.ID,
+		PriceClose: price,
+	})
+	s.muRep.Unlock()
+	if err != nil {
+		s.muRep.Lock()
+		err = s.rep.ChangeBalance(ctx, position.UserID, -sum)
+		s.muRep.Unlock()
+		if err != nil {
+			log.Error(err)
+		}
+		return err
+	}
+	return nil
+}
+
 // SetBalance changed balance of user
 func (s *Service) SetBalance(ctx context.Context, userID int32, sum float32) error {
 	s.muUsers.RLock()
