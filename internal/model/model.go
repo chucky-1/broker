@@ -31,6 +31,8 @@ type Position struct {
 	Count      int32
 	PriceOpen  float32
 	TimeOpen   time.Time
+	BidClose   float32
+	AskClose   float32
 	StopLoss   float32
 	TakeProfit float32
 	IsBuy      bool

@@ -36,5 +36,5 @@ type ClosePosition struct {
 }
 
 type PositionCloser interface {
-	Close(ctx context.Context, position *model.Position, price float32) error
+	Close(ctx context.Context, position *model.Position) error
 }

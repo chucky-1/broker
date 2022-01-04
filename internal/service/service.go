@@ -291,22 +291,24 @@ func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 	return nil
 }
 
-func (s *Service) Close(ctx context.Context, position *model.Position, price float32) error {
-	sum := price * float32(position.Count)
+func (s *Service) Close(ctx context.Context, position *model.Position) error {
+	var price float32
 	if position.IsBuy {
 		s.muRep.Lock()
-		err := s.rep.ChangeBalance(ctx, position.UserID, sum)
+		err := s.rep.ChangeBalance(ctx, position.UserID, position.AskClose * float32(position.Count))
 		s.muRep.Unlock()
 		if err != nil {
 			return err
 		}
+		price = position.AskClose
 	} else {
 		s.muRep.Lock()
-		err := s.rep.ChangeBalance(ctx, position.UserID, -sum)
+		err := s.rep.ChangeBalance(ctx, position.UserID, -(position.BidClose * float32(position.Count)))
 		s.muRep.Unlock()
 		if err != nil {
 			return err
 		}
+		price = position.BidClose
 	}
 	s.muRep.Lock()
 	err := s.rep.ClosePosition(ctx, &request.ClosePosition{
@@ -317,14 +319,14 @@ func (s *Service) Close(ctx context.Context, position *model.Position, price flo
 	if err != nil {
 		if position.IsBuy {
 			s.muRep.Lock()
-			err = s.rep.ChangeBalance(ctx, position.UserID, -sum)
+			err = s.rep.ChangeBalance(ctx, position.UserID, -(position.AskClose * float32(position.Count)))
 			s.muRep.Unlock()
 			if err != nil {
 				log.Error(err)
 			}
 		} else {
 			s.muRep.Lock()
-			err = s.rep.ChangeBalance(ctx, position.UserID, sum)
+			err = s.rep.ChangeBalance(ctx, position.UserID, position.BidClose * float32(position.Count))
 			s.muRep.Unlock()
 			if err != nil {
 				log.Error(err)
