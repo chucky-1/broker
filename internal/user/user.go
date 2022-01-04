@@ -2,10 +2,11 @@
 package user
 
 import (
-	"context"
 	"github.com/chucky-1/broker/internal/model"
 	"github.com/chucky-1/broker/internal/request"
 	log "github.com/sirupsen/logrus"
+
+	"context"
 	"sync"
 )
 
@@ -31,9 +32,9 @@ func NewUser(ctx context.Context, id int32, balance float32, positions *sync.Map
 	go func(ctx context.Context) {
 		for {
 			select {
-			case <- ctx.Done():
+			case <-ctx.Done():
 				return
-			case price := <- u.chPrice:
+			case price := <-u.chPrice:
 				p, ok := u.positions.Load(price.ID)
 				if !ok {
 					continue

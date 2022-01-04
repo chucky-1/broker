@@ -3,6 +3,7 @@ package user
 import (
 	"github.com/chucky-1/broker/internal/model"
 	"github.com/stretchr/testify/assert"
+
 	"testing"
 )
 

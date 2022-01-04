@@ -79,6 +79,7 @@ func (r *Repository) ClosePosition(ctx context.Context, position *request.CloseP
 	return nil
 }
 
+// GetPosition returns a position
 func (r *Repository) GetPosition(ctx context.Context, positionID int32) (*model.Position, error) {
 	var position model.Position
 	err := r.conn.QueryRow(ctx, "SELECT id, user_id, symbol_id, symbol_title, count, price_open, time_open, " +
@@ -143,6 +144,7 @@ func (r *Repository) GetAllOpenPositions() (map[int32]*model.Position, error) {
 	return positions, nil
 }
 
+// GetAllUsers returns all users
 func (r *Repository) GetAllUsers() (map[int32]*model.User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -164,6 +166,7 @@ func (r *Repository) GetAllUsers() (map[int32]*model.User, error) {
 	return users, nil
 }
 
+// GetUserIDByPositionID returns user's id by id of position
 func (r *Repository) GetUserIDByPositionID(ctx context.Context, positionID int32) (int32, error) {
 	var userID int32
 	err := r.conn.QueryRow(ctx, "SELECT user_id FROM positions WHERE id = $1", positionID).Scan(&userID)

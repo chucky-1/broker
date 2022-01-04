@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"github.com/caarlos0/env/v6"
 	"github.com/chucky-1/broker/internal/config"
 	"github.com/chucky-1/broker/internal/grpc/server"
@@ -14,6 +12,9 @@ import (
 	"github.com/jackc/pgx/v4"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+
+	"context"
+	"fmt"
 	"net"
 	"strconv"
 )
@@ -45,7 +46,7 @@ func main() {
 	symbols := map[int32]*model.Symbol{}
 	symbolID := make([]int32, 0, countOfSymbols)
 	for i := 0; i < countOfSymbols; i++ {
-		title := fmt.Sprint("Symbol ", strconv.Itoa(i + 1))
+		title := fmt.Sprint("Symbol ", strconv.Itoa(i+1))
 		symbols[int32(i+1)] = &model.Symbol{
 			ID:    int32(i+1),
 			Title: title,

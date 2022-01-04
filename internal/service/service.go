@@ -7,12 +7,12 @@ import (
 	"github.com/chucky-1/broker/internal/request"
 	"github.com/chucky-1/broker/internal/user"
 	log "github.com/sirupsen/logrus"
-	"time"
 
 	"context"
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Service implements business logic
@@ -41,9 +41,9 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 	go func(ctx context.Context) {
 		for {
 			select {
-			case <- ctx.Done():
+			case <-ctx.Done():
 				return
-			case price := <- chPrice:
+			case price := <-chPrice:
 				s.muPrices.Lock()
 				s.prices[price.ID] = price
 				s.muPrices.Unlock()
@@ -62,6 +62,9 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 	for _, u := range users {
 		positions := new(sync.Map)
 		openPositions, err := rep.GetOpenPositions(u.ID)
+		if err != nil {
+			return nil, err
+		}
 		for _, position := range openPositions {
 			allPositions, ok := positions.Load(position.SymbolID)
 			if !ok {
@@ -197,17 +200,17 @@ func (s *Service) OpenPosition(ctx context.Context, r *request.OpenPositionServi
 		return 0, err
 	}
 
-	position := model.Position {
-		ID: id,
-		UserID: r.UserID,
-		SymbolID: r.SymbolID,
+	position := model.Position{
+		ID:          id,
+		UserID:      r.UserID,
+		SymbolID:    r.SymbolID,
 		SymbolTitle: title,
-		Count: r.Count,
-		PriceOpen: price,
-		TimeOpen: t,
-		StopLoss: r.StopLoss,
-		TakeProfit: r.TakeProfit,
-		IsBuy: r.IsBuy,
+		Count:       r.Count,
+		PriceOpen:   price,
+		TimeOpen:    t,
+		StopLoss:    r.StopLoss,
+		TakeProfit:  r.TakeProfit,
+		IsBuy:       r.IsBuy,
 	}
 	u.OpenPosition(&position)
 	return id, nil
@@ -234,7 +237,7 @@ func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 	}
 
 	var price float32
-	if position.IsBuy == true {
+	if position.IsBuy {
 		s.muPrices.RLock()
 		price = s.prices[position.SymbolID].Ask
 		s.muPrices.RUnlock()
@@ -293,6 +296,7 @@ func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 	return nil
 }
 
+// Close closes a position
 func (s *Service) Close(ctx context.Context, position *model.Position) error {
 	var price float32
 	if position.IsBuy {

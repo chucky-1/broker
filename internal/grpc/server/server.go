@@ -22,7 +22,8 @@ func NewServer(srv *service.Service) *Server {
 	return &Server{srv: srv}
 }
 
-func (s *Server)SignUp(ctx context.Context, r *protocol.SignUpRequest) (*protocol.SignUpResponse, error) {
+// SignUp registers a new user
+func (s *Server) SignUp(ctx context.Context, r *protocol.SignUpRequest) (*protocol.SignUpResponse, error) {
 	id, err := s.srv.SignUp(ctx, r.Deposit)
 	if err != nil {
 		return nil, err
@@ -30,10 +31,12 @@ func (s *Server)SignUp(ctx context.Context, r *protocol.SignUpRequest) (*protoco
 	return &protocol.SignUpResponse{UserId: id}, nil
 }
 
-func (s *Server)SignIn(ctx context.Context, r *protocol.SignInRequest) (*protocol.SignInResponse, error) {
+// SignIn logs into your account
+func (s *Server) SignIn(ctx context.Context, r *protocol.SignInRequest) (*protocol.SignInResponse, error) {
 	return &protocol.SignInResponse{}, nil
 }
 
+// OpenPosition opens a position
 func (s *Server) OpenPosition(ctx context.Context, r *protocol.OpenPositionRequest) (*protocol.OpenPositionResponse, error) {
 	positionID, err := s.srv.OpenPosition(ctx, &request.OpenPositionService{
 		UserID:     r.UserId,
@@ -63,10 +66,11 @@ func (s *Server) OpenPosition(ctx context.Context, r *protocol.OpenPositionReque
 	return &protocol.OpenPositionResponse{PositionId: positionID}, nil
 }
 
-func (s *Server) ClosePosition(ctx context.Context, request *protocol.ClosePositionRequest) (*protocol.ClosePositionResponse, error) {
-	err := s.srv.ClosePosition(ctx, request.PositionId)
+// ClosePosition closes a position
+func (s *Server) ClosePosition(ctx context.Context, r *protocol.ClosePositionRequest) (*protocol.ClosePositionResponse, error) {
+	err := s.srv.ClosePosition(ctx, r.PositionId)
 	if err != nil {
-		if err.Error() == fmt.Sprintf("you did not open a position with id %d", request.PositionId) {
+		if err.Error() == fmt.Sprintf("you did not open a position with id %d", r.PositionId) {
 			return nil, err
 		}
 		log.Error(err)
@@ -75,15 +79,17 @@ func (s *Server) ClosePosition(ctx context.Context, request *protocol.ClosePosit
 	return &protocol.ClosePositionResponse{}, nil
 }
 
-func (s *Server) SetBalance(ctx context.Context, request *protocol.SetBalanceRequest) (*protocol.SetBalanceResponse, error) {
-	err := s.srv.SetBalance(ctx, request.UserId, request.Sum)
+// SetBalance changes user's balance
+func (s *Server) SetBalance(ctx context.Context, r *protocol.SetBalanceRequest) (*protocol.SetBalanceResponse, error) {
+	err := s.srv.SetBalance(ctx, r.UserId, r.Sum)
 	if err != nil {
 		return nil, err
 	}
 	return &protocol.SetBalanceResponse{}, nil
 }
 
-func (s *Server) GetBalance(ctx context.Context, request *protocol.GetBalanceRequest) (*protocol.GetBalanceResponse, error) {
-	balance := s.srv.GetBalance(ctx, request.UserId)
+// GetBalance returns user's balance
+func (s *Server) GetBalance(ctx context.Context, r *protocol.GetBalanceRequest) (*protocol.GetBalanceResponse, error) {
+	balance := s.srv.GetBalance(ctx, r.UserId)
 	return &protocol.GetBalanceResponse{Sum: balance}, nil
 }
