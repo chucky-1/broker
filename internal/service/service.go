@@ -60,15 +60,17 @@ func NewService(ctx context.Context, rep *repository.Repository, chPrice chan *m
 		return nil, err
 	}
 	for _, u := range users {
-		positions := make(map[int32]map[int32]*model.Position)
+		positions := new(sync.Map)
 		openPositions, err := rep.GetOpenPositions(u.ID)
 		for _, position := range openPositions {
-			allPositions, ok := positions[position.SymbolID]
+			allPositions, ok := positions.Load(position.SymbolID)
 			if !ok {
-				positions[position.SymbolID] = make(map[int32]*model.Position)
-				positions[position.SymbolID][position.ID] = position
+				m := make(map[int32]*model.Position)
+				m[position.ID] = position
+				positions.Store(position.SymbolID, m)
 			} else {
-				allPositions[position.ID] = position
+				m := allPositions.(map[int32]*model.Position)
+				m[position.ID] = position
 			}
 		}
 		var closer request.PositionCloser = &s
@@ -93,7 +95,7 @@ func (s *Service) SignUp(ctx context.Context, deposit float32) (int32, error) {
 		return 0, err
 	}
 	var closer request.PositionCloser = s
-	newUser, err := user.NewUser(ctx, u.ID, u.Balance, make(map[int32]map[int32]*model.Position), closer)
+	newUser, err := user.NewUser(ctx, u.ID, u.Balance, new(sync.Map), closer)
 	if err != nil {
 		log.Error(err)
 	} else {

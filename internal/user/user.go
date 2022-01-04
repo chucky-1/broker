@@ -15,14 +15,12 @@ type User struct {
 	muBalance sync.RWMutex
 	balance   float32
 	chPrice   chan *model.Price
-	muPos     sync.RWMutex
-	positions map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
+	positions *sync.Map // map[symbolID]map[position.ID]*position
 	closer    request.PositionCloser
 }
 
 // NewUser is constructor
-func NewUser(ctx context.Context, id int32, balance float32, positions map[int32]map[int32]*model.Position,
-	closer request.PositionCloser) (*User, error) {
+func NewUser(ctx context.Context, id int32, balance float32, positions *sync.Map, closer request.PositionCloser) (*User, error) {
 	u := User{
 		id:        id,
 		balance:   balance,
@@ -36,12 +34,16 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 			case <- ctx.Done():
 				return
 			case price := <- u.chPrice:
-				u.muPos.RLock()
-				for _, position := range u.positions[price.ID] {
+				p, ok := u.positions.Load(price.ID)
+				if !ok {
+					continue
+				}
+				pos := p.(map[int32]*model.Position)
+				for _, position := range pos{
 					position.BidClose = price.Bid
 					position.AskClose = price.Ask
-					p := pnl(position)
-					log.Infof("pnl for position %d is %f", position.ID, p)
+					pn := pnl(position)
+					log.Infof("pnl for position %d is %f", position.ID, pn)
 					if stopLoss(position) {
 						err := u.close(ctx, position)
 						if err != nil {
@@ -61,7 +63,6 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 						}
 					}
 				}
-				u.muPos.RUnlock()
 			}
 		}
 	}(ctx)
@@ -70,22 +71,28 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 
 // OpenPosition appends position
 func (u *User) OpenPosition(position *model.Position) {
-	u.muPos.Lock()
-	defer u.muPos.Unlock()
-	allPositions, ok := u.positions[position.SymbolID]
+	allPositions, ok := u.positions.Load(position.SymbolID)
 	if !ok {
-		u.positions[position.SymbolID] = make(map[int32]*model.Position)
-		u.positions[position.SymbolID][position.ID] = position
+		m := make(map[int32]*model.Position)
+		m[position.ID] = position
+		u.positions.Store(position.SymbolID, m)
 	} else {
-		allPositions[position.ID] = position
+		positions := allPositions.(map[int32]*model.Position)
+		positions[position.ID] = position
 	}
 }
 
 // ClosePosition delete position
 func (u *User) ClosePosition(symbolID, positionID int32) {
-	u.muPos.Lock()
-	delete(u.positions[symbolID], positionID)
-	u.muPos.Unlock()
+	m, ok := u.positions.Load(symbolID)
+	if !ok {
+		return
+	}
+	positions := m.(map[int32]*model.Position)
+	delete(positions, positionID)
+	if len(positions) == 0 {
+		u.positions.Delete(symbolID)
+	}
 }
 
 // GetBalance returns balance
@@ -116,7 +123,16 @@ func (u *User) close(ctx context.Context, position *model.Position) error {
 		u.balance -= position.BidClose * float32(position.Count)
 		u.muBalance.Unlock()
 	}
-	delete(u.positions[position.SymbolID], position.ID)
+
+	p, ok := u.positions.Load(position.SymbolID)
+	if !ok {
+		log.Errorf("position %d successful close but didn't delete from map", position.ID)
+	}
+	positions := p.(map[int32]*model.Position)
+	delete(positions, position.ID)
+	if len(positions) == 0 {
+		u.positions.Delete(position.SymbolID)
+	}
 	return nil
 }
 
@@ -147,7 +163,8 @@ func (u *User) marginCall(position *model.Position) bool {
 	bln := u.balance
 	u.muBalance.RUnlock()
 
-	for _, positions := range u.positions {
+	u.positions.Range(func(key, value interface{}) bool {
+		positions := value.(map[int32]*model.Position)
 		for _, pos := range positions {
 			p := pnl(pos)
 			if position.IsBuy {
@@ -156,11 +173,9 @@ func (u *User) marginCall(position *model.Position) bool {
 				bln = bln - pos.PriceOpen * float32(position.Count) + p
 			}
 		}
-	}
-	if bln < 0 {
 		return true
-	}
-	return false
+	})
+	return bln < 0
 }
 
 // GetID returns id
