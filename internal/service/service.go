@@ -114,7 +114,7 @@ func (s *Service) OpenPosition(ctx context.Context, r *request.OpenPositionServi
 	}
 
 	var price float32
-	if r.IsBuy == true {
+	if r.IsBuy {
 		s.muPrices.RLock()
 		price = s.prices[r.SymbolID].Bid
 		s.muPrices.RUnlock()
@@ -138,13 +138,23 @@ func (s *Service) OpenPosition(ctx context.Context, r *request.OpenPositionServi
 		return 0, errors.New("not enough money")
 	}
 
-	s.muRep.Lock()
-	err := s.rep.ChangeBalance(ctx, r.UserID, -sum)
-	s.muRep.Unlock()
-	if err != nil {
-		return 0, err
+	if r.IsBuy {
+		s.muRep.Lock()
+		err := s.rep.ChangeBalance(ctx, r.UserID, -sum)
+		s.muRep.Unlock()
+		if err != nil {
+			return 0, err
+		}
+		u.ChangeBalance(-sum)
+	} else {
+		s.muRep.Lock()
+		err := s.rep.ChangeBalance(ctx, r.UserID, sum)
+		s.muRep.Unlock()
+		if err != nil {
+			return 0, err
+		}
+		u.ChangeBalance(sum)
 	}
-	u.ChangeBalance(-sum)
 
 	t := time.Now()
 
@@ -165,12 +175,22 @@ func (s *Service) OpenPosition(ctx context.Context, r *request.OpenPositionServi
 	}, t)
 	s.muRep.Unlock()
 	if err != nil {
-		u.ChangeBalance(sum)
-		s.muRep.Lock()
-		err = s.rep.ChangeBalance(ctx, u.GetID(), sum)
-		s.muRep.Unlock()
-		if err != nil {
-			log.Error(err)
+		if r.IsBuy {
+			u.ChangeBalance(sum)
+			s.muRep.Lock()
+			err = s.rep.ChangeBalance(ctx, u.GetID(), sum)
+			s.muRep.Unlock()
+			if err != nil {
+				log.Error(err)
+			}
+		} else {
+			u.ChangeBalance(-sum)
+			s.muRep.Lock()
+			err = s.rep.ChangeBalance(ctx, u.GetID(), -sum)
+			s.muRep.Unlock()
+			if err != nil {
+				log.Error(err)
+			}
 		}
 		return 0, err
 	}
@@ -222,13 +242,25 @@ func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 		s.muPrices.RUnlock()
 	}
 	sum := price * float32(position.Count)
-	s.muRep.Lock()
-	err = s.rep.ChangeBalance(ctx, u.GetID(), sum)
-	s.muRep.Unlock()
-	if err != nil {
-		return err
+
+	if position.IsBuy {
+		s.muRep.Lock()
+		err = s.rep.ChangeBalance(ctx, u.GetID(), sum)
+		s.muRep.Unlock()
+		if err != nil {
+			return err
+		}
+		u.ChangeBalance(sum)
+	} else {
+		s.muRep.Lock()
+		err = s.rep.ChangeBalance(ctx, u.GetID(), -sum)
+		s.muRep.Unlock()
+		if err != nil {
+			return err
+		}
+		u.ChangeBalance(-sum)
 	}
-	u.ChangeBalance(sum)
+
 	s.muRep.Lock()
 	err = s.rep.ClosePosition(ctx, &request.ClosePosition{
 		ID:         positionID,
@@ -236,12 +268,22 @@ func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 	})
 	s.muRep.Unlock()
 	if err != nil {
-		u.ChangeBalance(-sum)
-		s.muRep.Lock()
-		err = s.rep.ChangeBalance(ctx, u.GetID(), -sum)
-		s.muRep.Unlock()
-		if err != nil {
-			log.Error(err)
+		if position.IsBuy {
+			u.ChangeBalance(-sum)
+			s.muRep.Lock()
+			err = s.rep.ChangeBalance(ctx, u.GetID(), -sum)
+			s.muRep.Unlock()
+			if err != nil {
+				log.Error(err)
+			} else {
+				u.ChangeBalance(sum)
+				s.muRep.Lock()
+				err = s.rep.ChangeBalance(ctx, u.GetID(), sum)
+				s.muRep.Unlock()
+				if err != nil {
+					log.Error(err)
+				}
+			}
 		}
 		return err
 	}
@@ -251,24 +293,42 @@ func (s *Service) ClosePosition(ctx context.Context, positionID int32) error {
 
 func (s *Service) Close(ctx context.Context, position *model.Position, price float32) error {
 	sum := price * float32(position.Count)
-	s.muRep.Lock()
-	err := s.rep.ChangeBalance(ctx, position.UserID, sum)
-	s.muRep.Unlock()
-	if err != nil {
-		return err
+	if position.IsBuy {
+		s.muRep.Lock()
+		err := s.rep.ChangeBalance(ctx, position.UserID, sum)
+		s.muRep.Unlock()
+		if err != nil {
+			return err
+		}
+	} else {
+		s.muRep.Lock()
+		err := s.rep.ChangeBalance(ctx, position.UserID, -sum)
+		s.muRep.Unlock()
+		if err != nil {
+			return err
+		}
 	}
 	s.muRep.Lock()
-	err = s.rep.ClosePosition(ctx, &request.ClosePosition{
+	err := s.rep.ClosePosition(ctx, &request.ClosePosition{
 		ID:         position.ID,
 		PriceClose: price,
 	})
 	s.muRep.Unlock()
 	if err != nil {
-		s.muRep.Lock()
-		err = s.rep.ChangeBalance(ctx, position.UserID, -sum)
-		s.muRep.Unlock()
-		if err != nil {
-			log.Error(err)
+		if position.IsBuy {
+			s.muRep.Lock()
+			err = s.rep.ChangeBalance(ctx, position.UserID, -sum)
+			s.muRep.Unlock()
+			if err != nil {
+				log.Error(err)
+			}
+		} else {
+			s.muRep.Lock()
+			err = s.rep.ChangeBalance(ctx, position.UserID, sum)
+			s.muRep.Unlock()
+			if err != nil {
+				log.Error(err)
+			}
 		}
 		return err
 	}

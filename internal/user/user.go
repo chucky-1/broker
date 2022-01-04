@@ -2,11 +2,10 @@
 package user
 
 import (
+	"context"
 	"github.com/chucky-1/broker/internal/model"
 	"github.com/chucky-1/broker/internal/request"
 	log "github.com/sirupsen/logrus"
-
-	"context"
 	"sync"
 )
 
@@ -18,6 +17,8 @@ type User struct {
 	chPrice   chan *model.Price
 	muPos     sync.RWMutex
 	positions map[int32]map[int32]*model.Position // map[symbolID]map[position.ID]*position
+	muPnl     sync.RWMutex
+	pnl       map[int32]float32 // map[position.ID]pnl
 	closer    request.PositionCloser
 }
 
@@ -29,7 +30,8 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 		balance:   balance,
 		chPrice:   make(chan *model.Price),
 		positions: positions,
-		closer: closer,
+		closer:    closer,
+		pnl:       make(map[int32]float32),
 	}
 	go func(ctx context.Context) {
 		for {
@@ -48,6 +50,12 @@ func NewUser(ctx context.Context, id int32, balance float32, positions map[int32
 						}
 					}
 					if takeProfit(position, price) {
+						err := u.close(ctx, position, price)
+						if err != nil {
+							log.Error(err)
+						}
+					}
+					if u.marginCall(position, p) {
 						err := u.close(ctx, position, price)
 						if err != nil {
 							log.Error(err)
@@ -97,7 +105,7 @@ func (u *User) ChangeBalance(sum float32) {
 
 func (u *User) close(ctx context.Context, position *model.Position, p *model.Price) error {
 	var price float32
-	if position.IsBuy == true {
+	if position.IsBuy {
 		price = p.Ask
 	} else {
 		price = p.Bid
@@ -106,9 +114,15 @@ func (u *User) close(ctx context.Context, position *model.Position, p *model.Pri
 	if err != nil {
 		return err
 	}
-	u.muBalance.Lock()
-	u.balance += price * float32(position.Count)
-	u.muBalance.Unlock()
+	if position.IsBuy {
+		u.muBalance.Lock()
+		u.balance += price * float32(position.Count)
+		u.muBalance.Unlock()
+	} else {
+		u.muBalance.Lock()
+		u.balance -= price * float32(position.Count)
+		u.muBalance.Unlock()
+	}
 	u.muPos.Lock()
 	delete(u.positions[position.SymbolID], position.ID)
 	u.muPos.Unlock()
@@ -117,7 +131,10 @@ func (u *User) close(ctx context.Context, position *model.Position, p *model.Pri
 
 // pnl is Profit and loss. Shows how much you earned or lost
 func pnl(position *model.Position, price *model.Price) float32 {
-	return price.Bid * float32(position.Count) - position.PriceOpen * float32(position.Count)
+	if position.IsBuy {
+		return price.Ask * float32(position.Count) - position.PriceOpen * float32(position.Count)
+	}
+	return position.PriceOpen * float32(position.Count) - price.Bid * float32(position.Count)
 }
 
 func stopLoss(position *model.Position, price *model.Price) bool {
@@ -132,6 +149,36 @@ func takeProfit(position *model.Position, price *model.Price) bool {
 		return price.Ask >= position.TakeProfit
 	}
 	return price.Bid <= position.TakeProfit
+}
+
+func (u *User) marginCall(position *model.Position, pnl float32) bool {
+	u.muPnl.Lock()
+	u.pnl[position.ID] = pnl
+	u.muPnl.Unlock()
+
+	u.muBalance.RLock()
+	bln := u.balance
+	u.muBalance.RUnlock()
+
+	u.muPos.RLock()
+	for _, positions := range u.positions {
+		for _, pos := range positions {
+			p, ok := u.pnl[position.ID]
+			if !ok {
+				continue
+			}
+			if position.IsBuy {
+				bln = bln + pos.PriceOpen * float32(position.Count) + p
+			} else {
+				bln = bln - pos.PriceOpen * float32(position.Count) + p
+			}
+		}
+	}
+	u.muPos.RUnlock()
+	if bln < 0 {
+		return true
+	}
+	return false
 }
 
 // GetID returns id
