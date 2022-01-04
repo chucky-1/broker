@@ -9,4 +9,6 @@ Each client has a balance that is stored in the database.
 
 The broker automatically updates the asset value and informs the client if the stock price that the client owns has changed.
 
+Also, I realize Stop Loss, Take Profit and Margin Call.
+
 The client https://github.com/chucky-1/trader
